@@ -1,6 +1,6 @@
 # Human Activity Extension
 
-`Human Activity Extension` is a free and open-source Chrome extension that injects a floating controller into the current tab and simulates low-intensity activity patterns inspired by the original bookmarklet.
+`Human Activity Extension` is a free and open-source browser extension for Chrome and Firefox that injects a floating controller into the current tab and simulates low-intensity activity patterns inspired by the original bookmarklet.
 
 ## What it does
 
@@ -21,9 +21,9 @@
 
 ## How it works
 
-The extension does not run automatically on every site. Click the extension icon in Chrome while you are on a normal web page, and it injects the controller into that tab.
+The extension does not run automatically on every site. Click the extension icon while you are on a normal web page, and it injects the controller into that tab.
 
-## Install locally
+## Install locally in Chrome
 
 1. Clone or download this repository.
 2. Open `chrome://extensions`.
@@ -34,6 +34,27 @@ The extension does not run automatically on every site. Click the extension icon
 ```text
 /path/to/human-activity-extension
 ```
+
+## Install locally in Firefox
+
+Generate a Firefox-ready package from the same source tree:
+
+```bash
+./build-firefox.sh
+```
+
+The script creates:
+
+```text
+dist/human-activity-extension-firefox.zip
+dist/human-activity-extension-firefox.xpi
+```
+
+Then:
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click `Load Temporary Add-on`.
+3. Choose the generated `.xpi`, or point Firefox to the repository `manifest.json` while developing.
 
 ## Usage
 
@@ -47,16 +68,17 @@ The extension does not run automatically on every site. Click the extension icon
 
 ## Project structure
 
-- `manifest.json` - Chrome extension manifest for MV3.
-- `background.js` - toolbar click handler that injects the controller.
+- `manifest.json` - shared MV3 manifest prepared for Chrome and Firefox.
+- `background.js` - toolbar click handler with Chrome and Firefox API fallbacks.
 - `content.js` - floating UI and simulation logic injected into the current tab.
 - `updates.xml` - Chrome update manifest for self-hosted updates.
 - `build-crx.sh` - builds a signed `CRX` using the stable private key.
-- `publish-release.sh` - publishes the signed `CRX` to the matching GitHub release.
+- `build-firefox.sh` - creates Firefox-ready release packages from the same codebase.
+- `publish-release.sh` - publishes the Chrome and Firefox release artifacts to the matching GitHub release.
 
 ## Packaging
 
-If you want a simple zip for distribution:
+If you want a simple source zip for local distribution:
 
 ```bash
 ./package-extension.sh
@@ -78,6 +100,12 @@ By default, the script expects the signing key at:
 
 ```text
 ~/.local/share/human-activity-extension/human-activity-extension.pem
+```
+
+If you want Firefox packages from the same codebase:
+
+```bash
+./build-firefox.sh
 ```
 
 ## Automatic updates
@@ -103,12 +131,14 @@ To build and publish a signed release asset for the current version:
 That script:
 
 - builds the `CRX` with the stable signing key
+- builds the Firefox `.zip` and `.xpi`
 - creates or updates the matching GitHub release
-- uploads the `CRX` as a release asset
+- uploads all release artifacts
 
 ## Notes
 
 - Chrome blocks extensions on internal pages such as `chrome://`.
+- Firefox blocks extensions on internal pages such as `about:`.
 - Wake Lock depends on browser support and page conditions.
 - Neutral clicks are intentionally conservative and avoid clearly interactive elements.
 

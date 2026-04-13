@@ -14,6 +14,7 @@ rm -f "$ARCHIVE_PATH"
     manifest.json \
     background.js \
     content.js \
+    icons \
     README.md \
     LICENSE
 )

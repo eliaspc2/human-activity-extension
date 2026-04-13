@@ -1,3 +1,9 @@
+const extensionApi = globalThis.browser ?? globalThis.chrome;
+const actionApi = extensionApi.action ?? extensionApi.browserAction;
+const runtimeApi = extensionApi.runtime;
+const storageArea = extensionApi.storage?.local;
+const tabsApi = extensionApi.tabs;
+
 const RESTRICTED_URL_PREFIXES = [
   "about:",
   "brave://",
@@ -5,7 +11,9 @@ const RESTRICTED_URL_PREFIXES = [
   "chrome://",
   "devtools://",
   "edge://",
+  "moz-extension://",
   "opera://",
+  "resource://",
   "vivaldi://"
 ];
 
@@ -25,13 +33,13 @@ function getSessionKey(tabId) {
 
 async function getTabSession(tabId) {
   const key = getSessionKey(tabId);
-  const result = await chrome.storage.local.get(key);
+  const result = await storageArea.get(key);
   return result[key] ?? null;
 }
 
 async function setTabSession(tabId, sessionState) {
   const key = getSessionKey(tabId);
-  await chrome.storage.local.set({
+  await storageArea.set({
     [key]: {
       ...sessionState,
       updatedAt: Date.now()
@@ -40,21 +48,33 @@ async function setTabSession(tabId, sessionState) {
 }
 
 async function clearTabSession(tabId) {
-  await chrome.storage.local.remove(getSessionKey(tabId));
+  await storageArea.remove(getSessionKey(tabId));
 }
 
 async function injectController(tabId) {
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content.js"]
-    });
+    if (extensionApi.scripting?.executeScript) {
+      await extensionApi.scripting.executeScript({
+        target: { tabId },
+        files: ["content.js"]
+      });
+      return;
+    }
+
+    if (tabsApi.executeScript) {
+      await tabsApi.executeScript(tabId, {
+        file: "content.js"
+      });
+      return;
+    }
+
+    throw new Error("No supported executeScript API is available.");
   } catch (error) {
     console.error("Failed to inject Human Activity controller.", error);
   }
 }
 
-chrome.action.onClicked.addListener(async (tab) => {
+actionApi.onClicked.addListener(async (tab) => {
   if (!isSupportedTab(tab)) {
     console.warn("Human Activity Extension cannot run on this page.", tab?.url);
     return;
@@ -63,7 +83,7 @@ chrome.action.onClicked.addListener(async (tab) => {
   await injectController(tab.id);
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+runtimeApi.onMessage.addListener((message, sender, sendResponse) => {
   void (async () => {
     const tabId = sender.tab?.id;
 
@@ -108,7 +128,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+tabsApi.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== "complete" || !isSupportedTab(tab)) {
     return;
   }
@@ -121,6 +141,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   await injectController(tabId);
 });
 
-chrome.tabs.onRemoved.addListener(async (tabId) => {
+tabsApi.onRemoved.addListener(async (tabId) => {
   await clearTabSession(tabId);
 });

@@ -4,6 +4,8 @@
     return;
   }
 
+  const extensionApi = globalThis.browser ?? globalThis.chrome;
+
   const STYLE_ID = "human-activity-extension-style";
   const ROOT_ID = "human-activity-extension-root";
   const PANEL_ID = "human-activity-extension-panel";
@@ -508,12 +510,30 @@
   }
 
   async function sendRuntimeMessage(message) {
+    if (!extensionApi?.runtime?.sendMessage) {
+      return {
+        ok: false,
+        error: "Runtime messaging is unavailable in this browser."
+      };
+    }
+
+    if (typeof globalThis.browser !== "undefined") {
+      try {
+        return (await extensionApi.runtime.sendMessage(message)) ?? { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error?.message ?? String(error)
+        };
+      }
+    }
+
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
+      globalThis.chrome.runtime.sendMessage(message, (response) => {
+        if (globalThis.chrome.runtime.lastError) {
           resolve({
             ok: false,
-            error: chrome.runtime.lastError.message
+            error: globalThis.chrome.runtime.lastError.message
           });
           return;
         }
