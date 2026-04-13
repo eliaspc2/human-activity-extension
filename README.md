@@ -78,7 +78,7 @@ Then:
 
 ## Packaging
 
-If you want a simple source zip for local distribution:
+If you want a simple source zip that stays compatible with both Chrome and Firefox:
 
 ```bash
 ./package-extension.sh
@@ -88,7 +88,13 @@ The script creates:
 
 ```text
 dist/human-activity-extension.zip
+dist/human-activity-extension-universal.zip
 ```
+
+The contents are the same shared source package:
+
+- in Chrome, unzip it and use `Load unpacked`
+- in Firefox, you can also load the extracted folder during development, or use the dedicated `.xpi` from `build-firefox.sh`
 
 If you want a signed `CRX` for local Chrome installation or self-hosted updates:
 
