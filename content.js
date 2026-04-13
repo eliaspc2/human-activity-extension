@@ -74,7 +74,15 @@
     <label class="hae-label" for="hae-minutes">Duration</label>
     <div class="hae-duration-row">
       <div class="hae-number-wrap">
-        <input id="hae-minutes" type="number" min="1" step="1" value="60" />
+        <input
+          id="hae-minutes"
+          type="text"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          autocomplete="off"
+          spellcheck="false"
+          value="60"
+        />
         <span class="hae-number-suffix">min</span>
       </div>
       <button class="hae-chip" id="hae-plus-5" type="button">+5</button>
@@ -146,6 +154,7 @@
   plus5Button.addEventListener("click", () => void addTime(5));
   plus30Button.addEventListener("click", () => void addTime(30));
   plus60Button.addEventListener("click", () => void addTime(60));
+  minutesInput.addEventListener("input", handleMinutesTyping);
   minutesInput.addEventListener("change", () => void handleMinutesChange());
   minDelaySlider.addEventListener("input", () => void syncDelayRange());
   maxDelaySlider.addEventListener("input", () => void syncDelayRange());
@@ -396,10 +405,7 @@
         min-width: 0;
       }
 
-      #${PANEL_ID} input[type="number"] {
-        appearance: textfield;
-        -moz-appearance: textfield;
-        -webkit-appearance: none;
+      #${PANEL_ID} #hae-minutes {
         width: 100%;
         min-width: 0;
         min-height: 38px;
@@ -418,9 +424,8 @@
         caret-color: #8bff74;
       }
 
-      #${PANEL_ID} input[type="number"]::-webkit-outer-spin-button,
-      #${PANEL_ID} input[type="number"]::-webkit-inner-spin-button {
-        margin: 0;
+      #${PANEL_ID} #hae-minutes::placeholder {
+        color: rgba(247, 244, 255, 0.55);
       }
 
       #${PANEL_ID} .hae-number-suffix {
@@ -883,6 +888,11 @@
     }
 
     return "click";
+  }
+
+  function handleMinutesTyping() {
+    const digitsOnly = minutesInput.value.replace(/[^\d]/g, "");
+    minutesInput.value = digitsOnly;
   }
 
   async function handleMinutesChange() {
