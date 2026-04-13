@@ -14,6 +14,8 @@
   - total duration
   - interval range between actions
   - quick time extensions
+- Can restore itself after a page refresh on the same tab.
+- Can optionally include random page refreshes in the activity cycle.
 - Tries to keep the screen awake using the Wake Lock API when available.
 
 ## How it works
@@ -37,8 +39,9 @@ The extension does not run automatically on every site. Click the extension icon
 1. Open a regular web page.
 2. Click the extension icon.
 3. Use the floating panel to configure the duration and action interval.
-4. Click `Start`.
-5. Click `Stop` to halt the session or `x` to remove the panel from the page.
+4. Optionally enable `Allow random refreshes`.
+5. Click `Start`.
+6. Click `Stop` to halt the session or `x` to remove the panel from the page.
 
 ## Project structure
 

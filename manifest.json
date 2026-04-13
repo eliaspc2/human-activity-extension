@@ -2,12 +2,14 @@
   "manifest_version": 3,
   "name": "Human Activity Extension",
   "description": "Injects a floating controller into the active tab to simulate reading-like activity with scrolling, cursor movement, and neutral clicks.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minimum_chrome_version": "114",
   "update_url": "https://raw.githubusercontent.com/eliaspc2/human-activity-extension/main/updates.xml",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage",
+    "tabs"
   ],
   "background": {
     "service_worker": "background.js"

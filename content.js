@@ -9,6 +9,7 @@
   const PANEL_ID = "human-activity-extension-panel";
   const CURSOR_ID = "human-activity-extension-cursor";
 
+  let panelOpen = true;
   let running = false;
   let sessionStartedAt = 0;
   let sessionEndsAt = 0;
@@ -17,6 +18,7 @@
   let nextActionName = "-";
   let minDelaySeconds = 5;
   let maxDelaySeconds = 30;
+  let randomRefreshEnabled = false;
   let isDragging = false;
   let dragOffsetX = 0;
   let dragOffsetY = 0;
@@ -25,6 +27,7 @@
   let statsTimer = null;
   let wakeLock = null;
   let focusPulseTimer = null;
+  let panelPosition = null;
 
   injectStyles();
 
@@ -71,6 +74,10 @@
       <input id="hae-max-delay" type="range" min="10" max="180" value="30" />
       <span id="hae-max-delay-value">30</span>
     </div>
+    <label class="hae-checkbox-row" for="hae-random-refresh">
+      <input id="hae-random-refresh" type="checkbox" />
+      <span>Allow random refreshes</span>
+    </label>
     <div class="hae-status-grid">
       <div>Status: <strong id="hae-status">Idle</strong></div>
       <div>Next action: <strong id="hae-next-action">-</strong></div>
@@ -96,6 +103,7 @@
   const maxDelaySlider = panel.querySelector("#hae-max-delay");
   const minDelayValue = panel.querySelector("#hae-min-delay-value");
   const maxDelayValue = panel.querySelector("#hae-max-delay-value");
+  const randomRefreshCheckbox = panel.querySelector("#hae-random-refresh");
   const statusValue = panel.querySelector("#hae-status");
   const nextActionValue = panel.querySelector("#hae-next-action");
   const countdownValue = panel.querySelector("#hae-countdown");
@@ -103,26 +111,52 @@
   const timeValue = panel.querySelector("#hae-time");
   const dragbar = panel.querySelector("#hae-dragbar");
 
-  plus5Button.addEventListener("click", () => addTime(5));
-  plus30Button.addEventListener("click", () => addTime(30));
-  plus60Button.addEventListener("click", () => addTime(60));
-  minDelaySlider.addEventListener("input", syncDelayRange);
-  maxDelaySlider.addEventListener("input", syncDelayRange);
-  startButton.addEventListener("click", startSession);
-  stopButton.addEventListener("click", () => stopSession("STOPPED"));
-  closeButton.addEventListener("click", destroy);
+  plus5Button.addEventListener("click", () => void addTime(5));
+  plus30Button.addEventListener("click", () => void addTime(30));
+  plus60Button.addEventListener("click", () => void addTime(60));
+  minDelaySlider.addEventListener("input", () => void syncDelayRange());
+  maxDelaySlider.addEventListener("input", () => void syncDelayRange());
+  randomRefreshCheckbox.addEventListener("change", () => void handleRandomRefreshToggle());
+  startButton.addEventListener("click", () => void startSession());
+  stopButton.addEventListener("click", () => void stopSession("STOPPED"));
+  closeButton.addEventListener("click", () => void destroy());
   dragbar.addEventListener("mousedown", handleDragStart);
   document.addEventListener("mousemove", handleDragMove);
   document.addEventListener("mouseup", handleDragEnd);
   document.addEventListener("visibilitychange", handleVisibilityChange);
 
-  syncDelayRange();
+  syncDelayRange({ persist: false });
   focusPanel();
 
   window.__humanActivityExtension = {
     destroy,
     focusPanel
   };
+
+  void initialize();
+
+  async function initialize() {
+    const savedSession = await loadSavedSession();
+
+    if (savedSession?.panelPosition) {
+      applyPanelPosition(savedSession.panelPosition);
+    }
+
+    if (savedSession) {
+      hydrateSession(savedSession);
+    } else {
+      await persistSession();
+    }
+
+    if (running) {
+      statusValue.textContent = "RUNNING";
+      startCursorAnimation();
+      startStatsLoop();
+      void requestWakeLock();
+      scheduleNextAction({ freshCycle: true });
+      updateStats();
+    }
+  }
 
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) {
@@ -272,6 +306,15 @@
         margin-bottom: 8px;
       }
 
+      #${PANEL_ID} .hae-checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        color: #374151;
+        font-weight: 600;
+      }
+
       #${PANEL_ID} .hae-status-grid {
         display: grid;
         gap: 6px;
@@ -282,6 +325,98 @@
     `;
 
     document.documentElement.appendChild(style);
+  }
+
+  async function sendRuntimeMessage(message) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({
+            ok: false,
+            error: chrome.runtime.lastError.message
+          });
+          return;
+        }
+
+        resolve(response ?? { ok: true });
+      });
+    });
+  }
+
+  async function loadSavedSession() {
+    const response = await sendRuntimeMessage({ type: "hae:get-tab-session" });
+    return response?.ok ? response.session : null;
+  }
+
+  async function persistSession() {
+    if (!panelOpen) {
+      return;
+    }
+
+    await sendRuntimeMessage({
+      type: "hae:set-tab-session",
+      session: buildSessionSnapshot()
+    });
+  }
+
+  async function clearSavedSession() {
+    await sendRuntimeMessage({ type: "hae:clear-tab-session" });
+  }
+
+  function buildSessionSnapshot() {
+    return {
+      panelOpen,
+      running,
+      sessionStartedAt,
+      sessionEndsAt,
+      actionCount,
+      nextActionAt,
+      nextActionName,
+      minDelaySeconds,
+      maxDelaySeconds,
+      minutesValue: minutesInput.value,
+      randomRefreshEnabled,
+      panelPosition
+    };
+  }
+
+  function hydrateSession(session) {
+    panelOpen = session.panelOpen !== false;
+    running = Boolean(session.running);
+    sessionStartedAt = Number(session.sessionStartedAt ?? 0);
+    sessionEndsAt = Number(session.sessionEndsAt ?? 0);
+    actionCount = Number(session.actionCount ?? 0);
+    nextActionAt = Number(session.nextActionAt ?? 0);
+    nextActionName = session.nextActionName ?? "-";
+    minDelaySeconds = Number(session.minDelaySeconds ?? minDelaySeconds);
+    maxDelaySeconds = Number(session.maxDelaySeconds ?? maxDelaySeconds);
+    randomRefreshEnabled = Boolean(session.randomRefreshEnabled);
+    panelPosition = session.panelPosition ?? null;
+
+    if (session.minutesValue) {
+      minutesInput.value = String(session.minutesValue);
+    }
+
+    minDelaySlider.value = String(minDelaySeconds);
+    maxDelaySlider.value = String(maxDelaySeconds);
+    minDelayValue.textContent = String(minDelaySeconds);
+    maxDelayValue.textContent = String(maxDelaySeconds);
+    randomRefreshCheckbox.checked = randomRefreshEnabled;
+    actionsValue.textContent = String(actionCount);
+    nextActionValue.textContent = nextActionName;
+
+    if (running && Date.now() >= sessionEndsAt) {
+      running = false;
+      nextActionName = "-";
+      nextActionAt = 0;
+      statusValue.textContent = "FINISHED";
+      countdownValue.textContent = "-";
+      nextActionValue.textContent = "-";
+      void persistSession();
+      return;
+    }
+
+    statusValue.textContent = running ? "RUNNING" : "Idle";
   }
 
   async function requestWakeLock() {
@@ -441,12 +576,34 @@
     }
   }
 
+  async function runRefreshAction() {
+    statusValue.textContent = "REFRESHING";
+    await persistSession();
+    window.location.reload();
+  }
+
   function isControllerElement(element) {
     return Boolean(element.closest("[data-human-activity-root='true']"));
   }
 
   function pickAction() {
     const roll = Math.random();
+
+    if (randomRefreshEnabled) {
+      if (roll < 0.5) {
+        return "scroll";
+      }
+
+      if (roll < 0.75) {
+        return "move";
+      }
+
+      if (roll < 0.9) {
+        return "click";
+      }
+
+      return "refresh";
+    }
 
     if (roll < 0.55) {
       return "scroll";
@@ -459,17 +616,20 @@
     return "click";
   }
 
-  function addTime(minutes) {
+  async function addTime(minutes) {
     if (running) {
       sessionEndsAt += minutes * 60 * 1000;
+      updateStats();
+      await persistSession();
       return;
     }
 
     const current = Number.parseInt(minutesInput.value || "0", 10);
     minutesInput.value = String(Math.max(current + minutes, 1));
+    await persistSession();
   }
 
-  function syncDelayRange() {
+  async function syncDelayRange({ persist = true } = {}) {
     minDelaySeconds = Number.parseInt(minDelaySlider.value, 10);
     maxDelaySeconds = Number.parseInt(maxDelaySlider.value, 10);
 
@@ -485,52 +645,74 @@
 
     minDelayValue.textContent = String(minDelaySeconds);
     maxDelayValue.textContent = String(maxDelaySeconds);
+
+    if (persist) {
+      await persistSession();
+    }
   }
 
-  function performAction(actionName) {
+  async function handleRandomRefreshToggle() {
+    randomRefreshEnabled = randomRefreshCheckbox.checked;
+    await persistSession();
+  }
+
+  async function performAction(actionName) {
     if (actionName === "scroll") {
       runReadingScroll();
     } else if (actionName === "move") {
       runMouseMove();
+    } else if (actionName === "refresh") {
+      actionCount += 1;
+      actionsValue.textContent = String(actionCount);
+      await persistSession();
+      await runRefreshAction();
+      return { reloading: true };
     } else {
       runSafeClick();
     }
 
     actionCount += 1;
     actionsValue.textContent = String(actionCount);
+    await persistSession();
+    return { reloading: false };
   }
 
-  function scheduleNextAction() {
+  function scheduleNextAction({ freshCycle = false } = {}) {
     if (!running) {
       return;
     }
 
     const now = Date.now();
     if (now >= sessionEndsAt) {
-      stopSession("FINISHED");
+      void stopSession("FINISHED");
       return;
     }
 
-    const delay = randomDelayMs();
+    const delay = freshCycle ? randomDelayMs() : randomDelayMs();
     nextActionAt = now + delay;
     nextActionName = pickAction();
     nextActionValue.textContent = nextActionName;
+    void persistSession();
 
     if (loopTimer) {
       window.clearTimeout(loopTimer);
     }
 
-    loopTimer = window.setTimeout(() => {
+    loopTimer = window.setTimeout(async () => {
       if (!running) {
         return;
       }
 
       if (Date.now() >= sessionEndsAt) {
-        stopSession("FINISHED");
+        await stopSession("FINISHED");
         return;
       }
 
-      performAction(nextActionName);
+      const result = await performAction(nextActionName);
+      if (result?.reloading) {
+        return;
+      }
+
       scheduleNextAction();
     }, delay);
   }
@@ -564,7 +746,7 @@
     progressBar.style.width = `${progress}%`;
 
     if (now >= sessionEndsAt) {
-      stopSession("FINISHED");
+      void stopSession("FINISHED");
     }
   }
 
@@ -584,18 +766,19 @@
     return `${seconds}s`;
   }
 
-  function startSession() {
+  async function startSession() {
     const requestedMinutes = Number.parseFloat(minutesInput.value);
     if (!Number.isFinite(requestedMinutes) || requestedMinutes <= 0) {
       minutesInput.value = "60";
     }
 
-    syncDelayRange();
+    await syncDelayRange();
 
     actionCount = 0;
     sessionStartedAt = Date.now();
     sessionEndsAt = sessionStartedAt + Math.max(requestedMinutes || 60, 1) * 60 * 1000;
     running = true;
+    panelOpen = true;
 
     statusValue.textContent = "RUNNING";
     actionsValue.textContent = "0";
@@ -604,15 +787,12 @@
     void requestWakeLock();
     startCursorAnimation();
     startStatsLoop();
-
-    nextActionName = pickAction();
-    nextActionValue.textContent = nextActionName;
-    performAction(nextActionName);
-    scheduleNextAction();
+    scheduleNextAction({ freshCycle: true });
     updateStats();
+    await persistSession();
   }
 
-  function stopSession(nextStatus = "STOPPED") {
+  async function stopSession(nextStatus = "STOPPED") {
     running = false;
     statusValue.textContent = nextStatus;
     nextActionAt = 0;
@@ -627,7 +807,8 @@
 
     stopStatsLoop();
     stopCursorAnimation();
-    void releaseWakeLock();
+    await releaseWakeLock();
+    await persistSession();
   }
 
   function handleDragStart(event) {
@@ -646,14 +827,33 @@
     panel.style.top = `${event.clientY - dragOffsetY}px`;
   }
 
-  function handleDragEnd() {
+  async function handleDragEnd() {
+    if (!isDragging) {
+      return;
+    }
+
     isDragging = false;
+    panelPosition = {
+      left: panel.style.left || null,
+      top: panel.style.top || null
+    };
+    await persistSession();
   }
 
   async function handleVisibilityChange() {
     if (document.visibilityState === "visible" && running && !wakeLock) {
       await requestWakeLock();
     }
+  }
+
+  function applyPanelPosition(position) {
+    if (!position?.left || !position?.top) {
+      return;
+    }
+
+    panel.style.right = "auto";
+    panel.style.left = position.left;
+    panel.style.top = position.top;
   }
 
   function focusPanel() {
@@ -670,12 +870,14 @@
     }, 1200);
   }
 
-  function destroy() {
-    stopSession("IDLE");
+  async function destroy() {
+    panelOpen = false;
+    await stopSession("IDLE");
     document.removeEventListener("mousemove", handleDragMove);
     document.removeEventListener("mouseup", handleDragEnd);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     dragbar.removeEventListener("mousedown", handleDragStart);
+    await clearSavedSession();
     root.remove();
     delete window.__humanActivityExtension;
   }
