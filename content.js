@@ -8,11 +8,20 @@
   const ROOT_ID = "human-activity-extension-root";
   const PANEL_ID = "human-activity-extension-panel";
   const CURSOR_ID = "human-activity-extension-cursor";
+  const STATUS = {
+    IDLE: "IDLE",
+    RUNNING: "RUNNING",
+    PAUSED: "PAUSED",
+    STOPPED: "STOPPED",
+    FINISHED: "FINISHED",
+    REFRESHING: "REFRESHING"
+  };
 
   let panelOpen = true;
-  let running = false;
-  let sessionStartedAt = 0;
-  let sessionEndsAt = 0;
+  let statusMode = STATUS.IDLE;
+  let sessionTotalMs = 60 * 60 * 1000;
+  let accumulatedElapsedMs = 0;
+  let currentRunStartedAt = 0;
   let actionCount = 0;
   let nextActionAt = 0;
   let nextActionName = "-";
@@ -46,44 +55,64 @@
   panel.setAttribute("aria-label", "Human Activity Controller");
   panel.innerHTML = `
     <div class="hae-dragbar" id="hae-dragbar">
-      <span>Human Activity</span>
-      <button class="hae-icon-button" id="hae-close" type="button" aria-label="Close controller">x</button>
-    </div>
-    <div class="hae-actions">
-      <button id="hae-start" type="button">Start</button>
-      <button id="hae-stop" type="button">Stop</button>
+      <div class="hae-title-group">
+        <span class="hae-title-mark">↻</span>
+        <span class="hae-title-text">Human Activity</span>
+      </div>
+      <button class="hae-icon-button" id="hae-close" type="button" aria-label="Close controller">×</button>
     </div>
     <div class="hae-progress">
       <div class="hae-progress-bar" id="hae-progress-bar"></div>
     </div>
-    <label class="hae-label" for="hae-minutes">Duration (minutes)</label>
-    <div class="hae-row">
-      <input id="hae-minutes" type="number" min="1" step="1" value="60" />
-      <button id="hae-plus-5" type="button">+5</button>
-      <button id="hae-plus-30" type="button">+30</button>
-      <button id="hae-plus-60" type="button">+60</button>
+    <div class="hae-actions">
+      <button class="hae-button hae-button-start" id="hae-start" type="button">▶ Start</button>
+      <button class="hae-button hae-button-pause" id="hae-pause" type="button">❚❚ Pause</button>
+      <button class="hae-button hae-button-stop" id="hae-stop" type="button">■ Stop</button>
     </div>
-    <label class="hae-label" for="hae-min-delay">Interval range (seconds)</label>
-    <div class="hae-slider-row">
-      <span>Min</span>
-      <input id="hae-min-delay" type="range" min="1" max="60" value="5" />
-      <span id="hae-min-delay-value">5</span>
+    <label class="hae-label" for="hae-minutes">Duration</label>
+    <div class="hae-duration-row">
+      <div class="hae-number-wrap">
+        <input id="hae-minutes" type="number" min="1" step="1" value="60" />
+        <span class="hae-number-suffix">min</span>
+      </div>
+      <button class="hae-chip" id="hae-plus-5" type="button">+5</button>
+      <button class="hae-chip" id="hae-plus-30" type="button">+30</button>
+      <button class="hae-chip" id="hae-plus-60" type="button">+60</button>
     </div>
-    <div class="hae-slider-row">
-      <span>Max</span>
-      <input id="hae-max-delay" type="range" min="10" max="180" value="30" />
-      <span id="hae-max-delay-value">30</span>
+    <label class="hae-label" for="hae-min-delay">Interval (seconds)</label>
+    <div class="hae-slider-stack">
+      <div class="hae-slider-row">
+        <span class="hae-slider-label">Min.</span>
+        <input id="hae-min-delay" type="range" min="1" max="60" value="5" />
+        <span class="hae-slider-value" id="hae-min-delay-value">5s</span>
+      </div>
+      <div class="hae-slider-row">
+        <span class="hae-slider-label">Max.</span>
+        <input id="hae-max-delay" type="range" min="10" max="180" value="30" />
+        <span class="hae-slider-value" id="hae-max-delay-value">30s</span>
+      </div>
     </div>
     <label class="hae-checkbox-row" for="hae-random-refresh">
       <input id="hae-random-refresh" type="checkbox" />
       <span>Allow random refreshes</span>
     </label>
     <div class="hae-status-grid">
-      <div>Status: <strong id="hae-status">Idle</strong></div>
-      <div>Next action: <strong id="hae-next-action">-</strong></div>
-      <div>In: <strong id="hae-countdown">-</strong></div>
-      <div>Actions: <strong id="hae-actions-count">0</strong></div>
-      <div>Elapsed: <strong id="hae-time">0s</strong></div>
+      <div class="hae-status-row">
+        <span class="hae-status-label">Status</span>
+        <strong class="hae-status-value" id="hae-status">IDLE</strong>
+        <span class="hae-status-label">Actions</span>
+        <strong class="hae-status-value hae-status-value-neutral" id="hae-actions-count">0</strong>
+      </div>
+      <div class="hae-status-row">
+        <span class="hae-status-label">Next</span>
+        <strong class="hae-status-value hae-status-value-accent" id="hae-next-action">-</strong>
+        <span class="hae-status-label">Elapsed</span>
+        <strong class="hae-status-value hae-status-value-neutral" id="hae-time">0s</strong>
+      </div>
+      <div class="hae-status-row">
+        <span class="hae-status-label">Remaining</span>
+        <strong class="hae-status-value hae-status-value-warning hae-status-span" id="hae-countdown">-</strong>
+      </div>
     </div>
   `;
 
@@ -92,6 +121,7 @@
   document.documentElement.appendChild(root);
 
   const startButton = panel.querySelector("#hae-start");
+  const pauseButton = panel.querySelector("#hae-pause");
   const stopButton = panel.querySelector("#hae-stop");
   const closeButton = panel.querySelector("#hae-close");
   const progressBar = panel.querySelector("#hae-progress-bar");
@@ -114,11 +144,13 @@
   plus5Button.addEventListener("click", () => void addTime(5));
   plus30Button.addEventListener("click", () => void addTime(30));
   plus60Button.addEventListener("click", () => void addTime(60));
+  minutesInput.addEventListener("change", () => void handleMinutesChange());
   minDelaySlider.addEventListener("input", () => void syncDelayRange());
   maxDelaySlider.addEventListener("input", () => void syncDelayRange());
   randomRefreshCheckbox.addEventListener("change", () => void handleRandomRefreshToggle());
-  startButton.addEventListener("click", () => void startSession());
-  stopButton.addEventListener("click", () => void stopSession("STOPPED"));
+  startButton.addEventListener("click", () => void handleStartClick());
+  pauseButton.addEventListener("click", () => void pauseSession());
+  stopButton.addEventListener("click", () => void stopSession(STATUS.STOPPED));
   closeButton.addEventListener("click", () => void destroy());
   dragbar.addEventListener("mousedown", handleDragStart);
   document.addEventListener("mousemove", handleDragMove);
@@ -127,6 +159,7 @@
 
   syncDelayRange({ persist: false });
   focusPanel();
+  updateUiState();
 
   window.__humanActivityExtension = {
     destroy,
@@ -148,8 +181,9 @@
       await persistSession();
     }
 
-    if (running) {
-      statusValue.textContent = "RUNNING";
+    updateUiState();
+
+    if (statusMode === STATUS.RUNNING) {
       startCursorAnimation();
       startStatsLoop();
       void requestWakeLock();
@@ -174,39 +208,47 @@
         position: fixed;
         left: 0;
         top: 0;
-        width: 12px;
-        height: 12px;
-        background: #ff3b3b;
+        width: 13px;
+        height: 13px;
+        background: radial-gradient(circle at 30% 30%, #ff9f9f 0%, #ff4d4d 38%, #c91414 100%);
         border-radius: 999px;
-        box-shadow: 0 0 0 2px rgba(255, 59, 59, 0.18);
+        box-shadow: 0 0 18px rgba(255, 77, 77, 0.72);
         z-index: 2147483646;
         pointer-events: none;
         transform: translate(-9999px, -9999px);
-        transition: transform 0.6s cubic-bezier(.22, .61, .36, 1);
+        transition: transform 0.58s cubic-bezier(.22, .61, .36, 1);
         display: none;
       }
 
       #${PANEL_ID} {
         position: fixed;
         top: 70px;
-        right: 40px;
-        width: 320px;
+        right: 32px;
+        width: 274px;
         box-sizing: border-box;
-        background: #ffffff;
-        color: #111827;
-        border: 1px solid #d1d5db;
-        border-radius: 14px;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
-        padding: 14px;
-        font-family: Arial, sans-serif;
-        font-size: 13px;
-        line-height: 1.45;
+        padding: 14px 16px 16px;
+        border-radius: 18px;
+        background:
+          radial-gradient(circle at top left, rgba(96, 82, 180, 0.18), transparent 42%),
+          linear-gradient(180deg, rgba(24, 22, 39, 0.98), rgba(17, 16, 28, 0.98));
+        color: #f4f3ff;
+        border: 1px solid rgba(122, 108, 192, 0.26);
+        box-shadow:
+          0 18px 40px rgba(0, 0, 0, 0.42),
+          inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        font-family: "Segoe UI", "SF Pro Text", "Noto Sans", sans-serif;
+        font-size: 12px;
+        line-height: 1.4;
         z-index: 2147483647;
         user-select: none;
+        backdrop-filter: blur(10px);
       }
 
       #${PANEL_ID}.hae-focus {
-        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.24), 0 20px 40px rgba(0, 0, 0, 0.28);
+        box-shadow:
+          0 0 0 2px rgba(96, 216, 126, 0.18),
+          0 18px 40px rgba(0, 0, 0, 0.42),
+          inset 0 1px 0 rgba(255, 255, 255, 0.03);
       }
 
       #${PANEL_ID} * {
@@ -224,103 +266,241 @@
         cursor: pointer;
       }
 
-      #${PANEL_ID} input[type="number"] {
-        width: 78px;
-        padding: 6px 8px;
-        border: 1px solid #9ca3af;
-        border-radius: 8px;
-        text-align: center;
-      }
-
-      #${PANEL_ID} input[type="range"] {
-        width: 100%;
+      #${PANEL_ID} button:disabled {
+        opacity: 0.42;
+        cursor: not-allowed;
       }
 
       #${PANEL_ID} .hae-dragbar {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 12px;
-        padding: 8px 10px;
-        border-radius: 10px;
-        background: #f3f4f6;
+        gap: 12px;
+        margin-bottom: 14px;
         cursor: move;
-        font-weight: 700;
       }
 
-      #${PANEL_ID} .hae-icon-button {
-        padding: 0;
-        width: 22px;
-        height: 22px;
-        border: 0;
-        background: transparent;
-        color: #374151;
-        font-size: 16px;
-        line-height: 1;
-      }
-
-      #${PANEL_ID} .hae-actions,
-      #${PANEL_ID} .hae-row {
+      #${PANEL_ID} .hae-title-group {
         display: flex;
         align-items: center;
         gap: 8px;
+        min-width: 0;
       }
 
-      #${PANEL_ID} .hae-actions {
+      #${PANEL_ID} .hae-title-mark {
+        display: inline-flex;
+        align-items: center;
         justify-content: center;
-        margin-bottom: 12px;
+        width: 18px;
+        height: 18px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.07);
+        color: #d9d2ff;
+        font-size: 11px;
       }
 
-      #${PANEL_ID} .hae-row {
-        margin-bottom: 12px;
+      #${PANEL_ID} .hae-title-text {
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      #${PANEL_ID} .hae-icon-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: rgba(244, 243, 255, 0.7);
+        font-size: 18px;
+        line-height: 1;
+      }
+
+      #${PANEL_ID} .hae-icon-button:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: #ffffff;
       }
 
       #${PANEL_ID} .hae-progress {
-        height: 6px;
+        height: 4px;
+        margin-bottom: 14px;
         border-radius: 999px;
-        background: #e5e7eb;
+        background: rgba(255, 255, 255, 0.1);
         overflow: hidden;
-        margin-bottom: 12px;
       }
 
       #${PANEL_ID} .hae-progress-bar {
         width: 0;
         height: 100%;
-        background: #4caf50;
+        background: linear-gradient(90deg, #78ff96, #4fd26c);
+        box-shadow: 0 0 12px rgba(120, 255, 150, 0.35);
         transition: width 0.25s ease;
+      }
+
+      #${PANEL_ID} .hae-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      #${PANEL_ID} .hae-button {
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 0;
+        font-size: 12px;
+        font-weight: 700;
+        color: #fefefe;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+
+      #${PANEL_ID} .hae-button-start {
+        background: linear-gradient(180deg, #59ce68, #43b955);
+      }
+
+      #${PANEL_ID} .hae-button-pause {
+        background: linear-gradient(180deg, #2f6ead, #25568a);
+      }
+
+      #${PANEL_ID} .hae-button-stop {
+        background: linear-gradient(180deg, #9a3544, #7b2331);
       }
 
       #${PANEL_ID} .hae-label {
         display: block;
-        margin-bottom: 6px;
-        color: #374151;
-        font-weight: 600;
+        margin-bottom: 7px;
+        color: rgba(203, 198, 229, 0.76);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      #${PANEL_ID} .hae-duration-row {
+        display: grid;
+        grid-template-columns: 1fr repeat(3, 50px);
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+
+      #${PANEL_ID} .hae-number-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      #${PANEL_ID} input[type="number"] {
+        width: 100%;
+        min-width: 0;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.06);
+        color: #f7f4ff;
+        text-align: center;
+      }
+
+      #${PANEL_ID} .hae-number-suffix {
+        color: rgba(203, 198, 229, 0.7);
+        font-size: 11px;
+      }
+
+      #${PANEL_ID} .hae-chip {
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 10px;
+        padding: 8px 0;
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(235, 232, 255, 0.92);
+        font-size: 11px;
+      }
+
+      #${PANEL_ID} .hae-slider-stack {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 12px;
       }
 
       #${PANEL_ID} .hae-slider-row {
         display: grid;
-        grid-template-columns: 34px 1fr 30px;
+        grid-template-columns: 30px 1fr 34px;
         align-items: center;
         gap: 8px;
-        margin-bottom: 8px;
+      }
+
+      #${PANEL_ID} .hae-slider-label {
+        color: rgba(203, 198, 229, 0.68);
+        font-size: 11px;
+      }
+
+      #${PANEL_ID} .hae-slider-value {
+        color: #8bff74;
+        font-size: 12px;
+        font-weight: 700;
+        text-align: right;
+      }
+
+      #${PANEL_ID} input[type="range"] {
+        width: 100%;
+        accent-color: #8bff74;
       }
 
       #${PANEL_ID} .hae-checkbox-row {
         display: flex;
         align-items: center;
         gap: 8px;
-        margin-bottom: 10px;
-        color: #374151;
-        font-weight: 600;
+        margin-bottom: 14px;
+        color: rgba(228, 223, 250, 0.85);
+        font-size: 11px;
       }
 
       #${PANEL_ID} .hae-status-grid {
         display: grid;
-        gap: 6px;
-        margin-top: 10px;
-        padding-top: 10px;
-        border-top: 1px solid #e5e7eb;
+        gap: 8px;
+      }
+
+      #${PANEL_ID} .hae-status-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto auto;
+        gap: 8px;
+        align-items: baseline;
+      }
+
+      #${PANEL_ID} .hae-status-row:last-child {
+        grid-template-columns: auto 1fr;
+      }
+
+      #${PANEL_ID} .hae-status-label {
+        color: rgba(203, 198, 229, 0.68);
+        font-size: 11px;
+      }
+
+      #${PANEL_ID} .hae-status-value {
+        color: #f4f3ff;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      #${PANEL_ID} .hae-status-value-neutral {
+        text-align: right;
+      }
+
+      #${PANEL_ID} .hae-status-value-accent {
+        color: #4cb6ff;
+      }
+
+      #${PANEL_ID} .hae-status-value-warning {
+        color: #ffc94d;
+        font-size: 16px;
+      }
+
+      #${PANEL_ID} .hae-status-span {
+        grid-column: span 3;
+        text-align: right;
       }
     `;
 
@@ -366,9 +546,10 @@
   function buildSessionSnapshot() {
     return {
       panelOpen,
-      running,
-      sessionStartedAt,
-      sessionEndsAt,
+      statusMode,
+      sessionTotalMs,
+      accumulatedElapsedMs,
+      currentRunStartedAt,
       actionCount,
       nextActionAt,
       nextActionName,
@@ -381,15 +562,14 @@
   }
 
   function hydrateSession(session) {
+    const now = Date.now();
+
     panelOpen = session.panelOpen !== false;
-    running = Boolean(session.running);
-    sessionStartedAt = Number(session.sessionStartedAt ?? 0);
-    sessionEndsAt = Number(session.sessionEndsAt ?? 0);
+    minDelaySeconds = Number(session.minDelaySeconds ?? minDelaySeconds);
+    maxDelaySeconds = Number(session.maxDelaySeconds ?? maxDelaySeconds);
     actionCount = Number(session.actionCount ?? 0);
     nextActionAt = Number(session.nextActionAt ?? 0);
     nextActionName = session.nextActionName ?? "-";
-    minDelaySeconds = Number(session.minDelaySeconds ?? minDelaySeconds);
-    maxDelaySeconds = Number(session.maxDelaySeconds ?? maxDelaySeconds);
     randomRefreshEnabled = Boolean(session.randomRefreshEnabled);
     panelPosition = session.panelPosition ?? null;
 
@@ -397,30 +577,77 @@
       minutesInput.value = String(session.minutesValue);
     }
 
-    minDelaySlider.value = String(minDelaySeconds);
-    maxDelaySlider.value = String(maxDelaySeconds);
-    minDelayValue.textContent = String(minDelaySeconds);
-    maxDelayValue.textContent = String(maxDelaySeconds);
-    randomRefreshCheckbox.checked = randomRefreshEnabled;
-    actionsValue.textContent = String(actionCount);
-    nextActionValue.textContent = nextActionName;
+    if (session.statusMode) {
+      statusMode = session.statusMode;
+      sessionTotalMs = Number(session.sessionTotalMs ?? sessionTotalMs);
+      accumulatedElapsedMs = Number(session.accumulatedElapsedMs ?? 0);
+      currentRunStartedAt = Number(session.currentRunStartedAt ?? 0);
+    } else {
+      const legacyStartedAt = Number(session.sessionStartedAt ?? 0);
+      const legacyEndsAt = Number(session.sessionEndsAt ?? 0);
+      const legacyRunning = Boolean(session.running);
+      const inferredTotalMs =
+        legacyStartedAt > 0 && legacyEndsAt > legacyStartedAt ? legacyEndsAt - legacyStartedAt : sessionTotalMs;
 
-    if (running && Date.now() >= sessionEndsAt) {
-      running = false;
-      nextActionName = "-";
-      nextActionAt = 0;
-      statusValue.textContent = "FINISHED";
-      countdownValue.textContent = "-";
-      nextActionValue.textContent = "-";
-      void persistSession();
-      return;
+      sessionTotalMs = inferredTotalMs;
+      if (legacyRunning) {
+        statusMode = STATUS.RUNNING;
+        currentRunStartedAt = now;
+        accumulatedElapsedMs = Math.max(0, inferredTotalMs - Math.max(legacyEndsAt - now, 0));
+      } else {
+        statusMode = STATUS.IDLE;
+        accumulatedElapsedMs = 0;
+        currentRunStartedAt = 0;
+      }
     }
 
-    statusValue.textContent = running ? "RUNNING" : "Idle";
+    minDelaySlider.value = String(minDelaySeconds);
+    maxDelaySlider.value = String(maxDelaySeconds);
+    minDelayValue.textContent = formatSeconds(minDelaySeconds);
+    maxDelayValue.textContent = formatSeconds(maxDelaySeconds);
+    randomRefreshCheckbox.checked = randomRefreshEnabled;
+    actionsValue.textContent = String(actionCount);
+
+    if (statusMode === STATUS.RUNNING && getRemainingMs(now) <= 0) {
+      accumulatedElapsedMs = sessionTotalMs;
+      currentRunStartedAt = 0;
+      nextActionAt = 0;
+      nextActionName = "-";
+      statusMode = STATUS.FINISHED;
+    }
+  }
+
+  function getElapsedMs(now = Date.now()) {
+    return accumulatedElapsedMs + (statusMode === STATUS.RUNNING && currentRunStartedAt ? now - currentRunStartedAt : 0);
+  }
+
+  function getRemainingMs(now = Date.now()) {
+    return Math.max(0, sessionTotalMs - getElapsedMs(now));
+  }
+
+  function setStatus(nextStatus) {
+    statusMode = nextStatus;
+    statusValue.textContent = nextStatus;
+    panel.dataset.status = nextStatus.toLowerCase();
+  }
+
+  function updateUiState() {
+    setStatus(statusMode);
+    nextActionValue.textContent = nextActionName;
+    actionsValue.textContent = String(actionCount);
+    minDelayValue.textContent = formatSeconds(minDelaySeconds);
+    maxDelayValue.textContent = formatSeconds(maxDelaySeconds);
+    randomRefreshCheckbox.checked = randomRefreshEnabled;
+
+    startButton.disabled = statusMode === STATUS.RUNNING;
+    pauseButton.disabled = statusMode !== STATUS.RUNNING;
+    stopButton.disabled = [STATUS.IDLE, STATUS.STOPPED, STATUS.FINISHED].includes(statusMode);
+
+    updateStats();
   }
 
   async function requestWakeLock() {
-    if (!running || !("wakeLock" in navigator) || document.visibilityState !== "visible") {
+    if (statusMode !== STATUS.RUNNING || !("wakeLock" in navigator) || document.visibilityState !== "visible") {
       return;
     }
 
@@ -428,7 +655,7 @@
       wakeLock = await navigator.wakeLock.request("screen");
       wakeLock.addEventListener("release", () => {
         wakeLock = null;
-        if (running) {
+        if (statusMode === STATUS.RUNNING) {
           void requestWakeLock();
         }
       });
@@ -577,7 +804,7 @@
   }
 
   async function runRefreshAction() {
-    statusValue.textContent = "REFRESHING";
+    setStatus(STATUS.REFRESHING);
     await persistSession();
     window.location.reload();
   }
@@ -616,16 +843,35 @@
     return "click";
   }
 
+  async function handleMinutesChange() {
+    const requestedMinutes = Number.parseFloat(minutesInput.value);
+    const normalizedMinutes = Number.isFinite(requestedMinutes) && requestedMinutes > 0 ? requestedMinutes : 60;
+    minutesInput.value = String(normalizedMinutes);
+
+    if (statusMode !== STATUS.RUNNING && statusMode !== STATUS.PAUSED) {
+      sessionTotalMs = normalizedMinutes * 60 * 1000;
+    }
+
+    updateUiState();
+    await persistSession();
+  }
+
   async function addTime(minutes) {
-    if (running) {
-      sessionEndsAt += minutes * 60 * 1000;
-      updateStats();
+    const deltaMs = minutes * 60 * 1000;
+
+    if (statusMode === STATUS.RUNNING || statusMode === STATUS.PAUSED) {
+      sessionTotalMs += deltaMs;
+      minutesInput.value = String(Math.max(Math.round(sessionTotalMs / 60000), 1));
+      updateUiState();
       await persistSession();
       return;
     }
 
     const current = Number.parseInt(minutesInput.value || "0", 10);
-    minutesInput.value = String(Math.max(current + minutes, 1));
+    const nextMinutes = Math.max(current + minutes, 1);
+    minutesInput.value = String(nextMinutes);
+    sessionTotalMs = nextMinutes * 60 * 1000;
+    updateUiState();
     await persistSession();
   }
 
@@ -643,8 +889,7 @@
       minDelaySlider.value = String(minDelaySeconds);
     }
 
-    minDelayValue.textContent = String(minDelaySeconds);
-    maxDelayValue.textContent = String(maxDelaySeconds);
+    updateUiState();
 
     if (persist) {
       await persistSession();
@@ -678,18 +923,17 @@
   }
 
   function scheduleNextAction({ freshCycle = false } = {}) {
-    if (!running) {
+    if (statusMode !== STATUS.RUNNING) {
       return;
     }
 
-    const now = Date.now();
-    if (now >= sessionEndsAt) {
-      void stopSession("FINISHED");
+    if (getRemainingMs() <= 0) {
+      void stopSession(STATUS.FINISHED);
       return;
     }
 
     const delay = freshCycle ? randomDelayMs() : randomDelayMs();
-    nextActionAt = now + delay;
+    nextActionAt = Date.now() + delay;
     nextActionName = pickAction();
     nextActionValue.textContent = nextActionName;
     void persistSession();
@@ -699,12 +943,12 @@
     }
 
     loopTimer = window.setTimeout(async () => {
-      if (!running) {
+      if (statusMode !== STATUS.RUNNING) {
         return;
       }
 
-      if (Date.now() >= sessionEndsAt) {
-        await stopSession("FINISHED");
+      if (getRemainingMs() <= 0) {
+        await stopSession(STATUS.FINISHED);
         return;
       }
 
@@ -730,23 +974,20 @@
   }
 
   function updateStats() {
-    if (!running) {
-      return;
-    }
-
     const now = Date.now();
-    const elapsedSeconds = Math.max(0, Math.floor((now - sessionStartedAt) / 1000));
-    const remainingSeconds = Math.max(0, Math.round((sessionEndsAt - now) / 1000));
-    const totalDuration = Math.max(sessionEndsAt - sessionStartedAt, 1);
-    const completedDuration = Math.max(now - sessionStartedAt, 0);
-    const progress = Math.min(100, (completedDuration / totalDuration) * 100);
+    const elapsedMs = getElapsedMs(now);
+    const remainingMs = getRemainingMs(now);
+    const progress = sessionTotalMs > 0 ? Math.min(100, (elapsedMs / sessionTotalMs) * 100) : 0;
 
-    timeValue.textContent = formatDuration(elapsedSeconds);
-    countdownValue.textContent = `${remainingSeconds}s`;
+    timeValue.textContent = formatDuration(Math.floor(elapsedMs / 1000));
+    countdownValue.textContent =
+      statusMode === STATUS.RUNNING || statusMode === STATUS.PAUSED || statusMode === STATUS.FINISHED
+        ? formatDuration(Math.ceil(remainingMs / 1000))
+        : "-";
     progressBar.style.width = `${progress}%`;
 
-    if (now >= sessionEndsAt) {
-      void stopSession("FINISHED");
+    if (statusMode === STATUS.RUNNING && remainingMs <= 0) {
+      void stopSession(STATUS.FINISHED);
     }
   }
 
@@ -766,39 +1007,70 @@
     return `${seconds}s`;
   }
 
-  async function startSession() {
-    const requestedMinutes = Number.parseFloat(minutesInput.value);
-    if (!Number.isFinite(requestedMinutes) || requestedMinutes <= 0) {
-      minutesInput.value = "60";
+  function formatSeconds(value) {
+    return `${value}s`;
+  }
+
+  async function handleStartClick() {
+    if (statusMode === STATUS.PAUSED) {
+      await resumeSession();
+      return;
     }
 
-    await syncDelayRange();
+    if (statusMode === STATUS.RUNNING) {
+      return;
+    }
 
+    await startSession();
+  }
+
+  async function startSession() {
+    const requestedMinutes = Number.parseFloat(minutesInput.value);
+    const normalizedMinutes = Number.isFinite(requestedMinutes) && requestedMinutes > 0 ? requestedMinutes : 60;
+
+    minutesInput.value = String(normalizedMinutes);
+    sessionTotalMs = normalizedMinutes * 60 * 1000;
+    accumulatedElapsedMs = 0;
+    currentRunStartedAt = Date.now();
     actionCount = 0;
-    sessionStartedAt = Date.now();
-    sessionEndsAt = sessionStartedAt + Math.max(requestedMinutes || 60, 1) * 60 * 1000;
-    running = true;
+    nextActionAt = 0;
+    nextActionName = "-";
     panelOpen = true;
 
-    statusValue.textContent = "RUNNING";
-    actionsValue.textContent = "0";
-    progressBar.style.width = "0%";
-
+    setStatus(STATUS.RUNNING);
+    updateUiState();
     void requestWakeLock();
     startCursorAnimation();
     startStatsLoop();
     scheduleNextAction({ freshCycle: true });
-    updateStats();
     await persistSession();
   }
 
-  async function stopSession(nextStatus = "STOPPED") {
-    running = false;
-    statusValue.textContent = nextStatus;
+  async function resumeSession() {
+    if (statusMode !== STATUS.PAUSED) {
+      return;
+    }
+
+    currentRunStartedAt = Date.now();
+    setStatus(STATUS.RUNNING);
+    updateUiState();
+    void requestWakeLock();
+    startCursorAnimation();
+    startStatsLoop();
+    scheduleNextAction({ freshCycle: true });
+    await persistSession();
+  }
+
+  async function pauseSession() {
+    if (statusMode !== STATUS.RUNNING) {
+      return;
+    }
+
+    accumulatedElapsedMs = getElapsedMs();
+    currentRunStartedAt = 0;
     nextActionAt = 0;
     nextActionName = "-";
-    nextActionValue.textContent = "-";
-    countdownValue.textContent = "-";
+    setStatus(STATUS.PAUSED);
 
     if (loopTimer) {
       window.clearTimeout(loopTimer);
@@ -808,6 +1080,34 @@
     stopStatsLoop();
     stopCursorAnimation();
     await releaseWakeLock();
+    updateUiState();
+    await persistSession();
+  }
+
+  async function stopSession(nextStatus = STATUS.STOPPED) {
+    if (statusMode === STATUS.RUNNING) {
+      accumulatedElapsedMs = getElapsedMs();
+    }
+
+    currentRunStartedAt = 0;
+    nextActionAt = 0;
+    nextActionName = "-";
+
+    if (nextStatus === STATUS.FINISHED) {
+      accumulatedElapsedMs = sessionTotalMs;
+    }
+
+    setStatus(nextStatus);
+
+    if (loopTimer) {
+      window.clearTimeout(loopTimer);
+      loopTimer = null;
+    }
+
+    stopStatsLoop();
+    stopCursorAnimation();
+    await releaseWakeLock();
+    updateUiState();
     await persistSession();
   }
 
@@ -841,7 +1141,7 @@
   }
 
   async function handleVisibilityChange() {
-    if (document.visibilityState === "visible" && running && !wakeLock) {
+    if (document.visibilityState === "visible" && statusMode === STATUS.RUNNING && !wakeLock) {
       await requestWakeLock();
     }
   }
@@ -872,7 +1172,7 @@
 
   async function destroy() {
     panelOpen = false;
-    await stopSession("IDLE");
+    await stopSession(STATUS.IDLE);
     document.removeEventListener("mousemove", handleDragMove);
     document.removeEventListener("mouseup", handleDragEnd);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
