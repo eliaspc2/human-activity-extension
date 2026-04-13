@@ -45,6 +45,9 @@ The extension does not run automatically on every site. Click the extension icon
 - `manifest.json` - Chrome extension manifest for MV3.
 - `background.js` - toolbar click handler that injects the controller.
 - `content.js` - floating UI and simulation logic injected into the current tab.
+- `updates.xml` - Chrome update manifest for self-hosted updates.
+- `build-crx.sh` - builds a signed `CRX` using the stable private key.
+- `publish-release.sh` - publishes the signed `CRX` to the matching GitHub release.
 
 ## Packaging
 
@@ -59,6 +62,44 @@ The script creates:
 ```text
 dist/human-activity-extension.zip
 ```
+
+If you want a signed `CRX` for local Chrome installation or self-hosted updates:
+
+```bash
+./build-crx.sh
+```
+
+By default, the script expects the signing key at:
+
+```text
+~/.local/share/human-activity-extension/human-activity-extension.pem
+```
+
+## Automatic updates
+
+This repository is prepared for Chrome-managed periodic updates on Linux through a hosted update manifest:
+
+- the extension manifest includes an `update_url`
+- the repository includes [`updates.xml`](updates.xml)
+- releases can publish the signed `CRX` asset that `updates.xml` points to
+
+Important detail:
+
+- `Load unpacked` does not auto-update
+- Chrome itself performs periodic update checks when the extension is installed through an update manifest
+- the extension does not need to poll GitHub on its own
+
+To build and publish a signed release asset for the current version:
+
+```bash
+./publish-release.sh
+```
+
+That script:
+
+- builds the `CRX` with the stable signing key
+- creates or updates the matching GitHub release
+- uploads the `CRX` as a release asset
 
 ## Notes
 
