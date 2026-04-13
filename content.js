@@ -18,6 +18,18 @@
     FINISHED: "FINISHED",
     REFRESHING: "REFRESHING"
   };
+  const ACTION_WEIGHTS = Object.freeze({
+    scroll: 0.55,
+    move: 0.25,
+    click: 0.15,
+    refresh: 0.05
+  });
+  const ACTION_LABELS = Object.freeze({
+    scroll: "Scroll",
+    move: "Mouse move",
+    click: "Click",
+    refresh: "Refresh"
+  });
 
   let panelOpen = true;
   let statusMode = STATUS.IDLE;
@@ -29,7 +41,8 @@
   let nextActionName = "-";
   let minDelaySeconds = 5;
   let maxDelaySeconds = 30;
-  let randomRefreshEnabled = true;
+  let enabledActions = createDefaultActionState();
+  let actionVariancePercent = 20;
   let isDragging = false;
   let dragOffsetX = 0;
   let dragOffsetY = 0;
@@ -62,10 +75,11 @@
   panel.setAttribute("role", "dialog");
   panel.setAttribute("aria-label", "Human Activity Controller");
   panel.innerHTML = `
-    <div class="hae-dragbar" id="hae-dragbar">
-      <div class="hae-title-group">
-        <span class="hae-title-mark">↻</span>
+    <div class="hae-header">
+      <button class="hae-icon-button hae-icon-button-primary" id="hae-check-updates" type="button" aria-label="Check updates" title="Check updates">↻</button>
+      <div class="hae-dragbar" id="hae-dragbar">
         <span class="hae-title-text">Human Activity</span>
+        <span class="hae-version" id="hae-version">v?</span>
       </div>
       <button class="hae-icon-button" id="hae-close" type="button" aria-label="Close controller">×</button>
     </div>
@@ -76,10 +90,6 @@
       <button class="hae-button hae-button-start" id="hae-start" type="button">▶ Start</button>
       <button class="hae-button hae-button-pause" id="hae-pause" type="button">❚❚ Pause</button>
       <button class="hae-button hae-button-stop" id="hae-stop" type="button">■ Stop</button>
-    </div>
-    <div class="hae-utility-row">
-      <button class="hae-chip hae-chip-wide" id="hae-check-updates" type="button">Check updates</button>
-      <span class="hae-version" id="hae-version">v?</span>
     </div>
     <div class="hae-update-note" id="hae-update-note"></div>
     <label class="hae-label" for="hae-minutes">Duration</label>
@@ -113,10 +123,37 @@
         <span class="hae-slider-value" id="hae-max-delay-value">30s</span>
       </div>
     </div>
-    <label class="hae-checkbox-row" for="hae-random-refresh">
-      <input id="hae-random-refresh" type="checkbox" checked />
-      <span>Allow random refreshes</span>
-    </label>
+    <label class="hae-label" for="hae-action-variance">Action variance</label>
+    <div class="hae-slider-stack">
+      <div class="hae-slider-row">
+        <span class="hae-slider-label">Var.</span>
+        <input id="hae-action-variance" type="range" min="0" max="100" value="20" />
+        <span class="hae-slider-value" id="hae-action-variance-value">20%</span>
+      </div>
+    </div>
+    <label class="hae-label">Actions</label>
+    <div class="hae-action-grid">
+      <label class="hae-action-toggle" for="hae-action-scroll">
+        <input id="hae-action-scroll" type="checkbox" checked />
+        <span class="hae-action-name">Scroll</span>
+        <span class="hae-action-weight">55%</span>
+      </label>
+      <label class="hae-action-toggle" for="hae-action-move">
+        <input id="hae-action-move" type="checkbox" checked />
+        <span class="hae-action-name">Mouse</span>
+        <span class="hae-action-weight">25%</span>
+      </label>
+      <label class="hae-action-toggle" for="hae-action-click">
+        <input id="hae-action-click" type="checkbox" checked />
+        <span class="hae-action-name">Click</span>
+        <span class="hae-action-weight">15%</span>
+      </label>
+      <label class="hae-action-toggle" for="hae-action-refresh">
+        <input id="hae-action-refresh" type="checkbox" checked />
+        <span class="hae-action-name">Refresh</span>
+        <span class="hae-action-weight">5%</span>
+      </label>
+    </div>
     <label class="hae-checkbox-row" for="hae-lock-on-finish">
       <input id="hae-lock-on-finish" type="checkbox" />
       <span>Lock computer when finished</span>
@@ -157,9 +194,16 @@
   const plus60Button = panel.querySelector("#hae-plus-60");
   const minDelaySlider = panel.querySelector("#hae-min-delay");
   const maxDelaySlider = panel.querySelector("#hae-max-delay");
+  const actionVarianceSlider = panel.querySelector("#hae-action-variance");
   const minDelayValue = panel.querySelector("#hae-min-delay-value");
   const maxDelayValue = panel.querySelector("#hae-max-delay-value");
-  const randomRefreshCheckbox = panel.querySelector("#hae-random-refresh");
+  const actionVarianceValue = panel.querySelector("#hae-action-variance-value");
+  const actionToggleInputs = {
+    scroll: panel.querySelector("#hae-action-scroll"),
+    move: panel.querySelector("#hae-action-move"),
+    click: panel.querySelector("#hae-action-click"),
+    refresh: panel.querySelector("#hae-action-refresh")
+  };
   const lockOnFinishCheckbox = panel.querySelector("#hae-lock-on-finish");
   const versionValue = panel.querySelector("#hae-version");
   const updateNoteValue = panel.querySelector("#hae-update-note");
@@ -177,7 +221,10 @@
   minutesInput.addEventListener("change", () => void handleMinutesChange());
   minDelaySlider.addEventListener("input", () => void syncDelayRange());
   maxDelaySlider.addEventListener("input", () => void syncDelayRange());
-  randomRefreshCheckbox.addEventListener("change", () => void handleRandomRefreshToggle());
+  actionVarianceSlider.addEventListener("input", () => void handleActionVarianceChange());
+  Object.entries(actionToggleInputs).forEach(([actionName, input]) => {
+    input.addEventListener("change", () => void handleActionToggle(actionName));
+  });
   lockOnFinishCheckbox.addEventListener("change", () => void handleLockOnFinishToggle());
   startButton.addEventListener("click", () => void handleStartClick());
   pauseButton.addEventListener("click", () => void pauseSession());
@@ -229,7 +276,6 @@
     updateUiState();
 
     if (statusMode === STATUS.RUNNING) {
-      startCursorAnimation();
       startStatsLoop();
       void requestWakeLock();
       scheduleNextAction({ freshCycle: true });
@@ -316,38 +362,28 @@
         cursor: not-allowed;
       }
 
+      #${PANEL_ID} .hae-header {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+
       #${PANEL_ID} .hae-dragbar {
         display: flex;
         align-items: center;
-        justify-content: space-between;
         gap: 12px;
-        margin-bottom: 14px;
-        cursor: move;
-      }
-
-      #${PANEL_ID} .hae-title-group {
-        display: flex;
-        align-items: center;
-        gap: 8px;
+        min-height: 24px;
         min-width: 0;
-      }
-
-      #${PANEL_ID} .hae-title-mark {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 18px;
-        height: 18px;
-        border-radius: 6px;
-        background: rgba(255, 255, 255, 0.07);
-        color: #d9d2ff;
-        font-size: 11px;
+        cursor: move;
       }
 
       #${PANEL_ID} .hae-title-text {
         font-size: 14px;
         font-weight: 700;
         letter-spacing: 0.02em;
+        min-width: 0;
       }
 
       #${PANEL_ID} .hae-icon-button {
@@ -364,9 +400,19 @@
         line-height: 1;
       }
 
+      #${PANEL_ID} .hae-icon-button-primary {
+        background: rgba(255, 255, 255, 0.07);
+        color: #d9d2ff;
+      }
+
       #${PANEL_ID} .hae-icon-button:hover {
         background: rgba(255, 255, 255, 0.06);
         color: #ffffff;
+      }
+
+      #${PANEL_ID} .hae-icon-button-primary:hover {
+        background: rgba(120, 255, 150, 0.14);
+        color: #8bff74;
       }
 
       #${PANEL_ID} .hae-progress {
@@ -476,21 +522,8 @@
         font-size: 11px;
       }
 
-      #${PANEL_ID} .hae-chip-wide {
-        width: 100%;
-        padding: 8px 10px;
-        text-align: center;
-      }
-
-      #${PANEL_ID} .hae-utility-row {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 10px;
-        align-items: center;
-        margin-bottom: 8px;
-      }
-
       #${PANEL_ID} .hae-version {
+        margin-left: auto;
         color: rgba(203, 198, 229, 0.78);
         font-size: 11px;
         font-weight: 700;
@@ -541,6 +574,45 @@
         margin-bottom: 14px;
         color: rgba(228, 223, 250, 0.85);
         font-size: 11px;
+      }
+
+      #${PANEL_ID} .hae-action-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      #${PANEL_ID} .hae-action-toggle {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(228, 223, 250, 0.9);
+        font-size: 11px;
+      }
+
+      #${PANEL_ID} .hae-action-toggle input {
+        margin: 0;
+        accent-color: #8bff74;
+      }
+
+      #${PANEL_ID} .hae-action-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #${PANEL_ID} .hae-action-weight {
+        color: #8bff74;
+        font-size: 11px;
+        font-weight: 700;
       }
 
       #${PANEL_ID} .hae-status-grid {
@@ -663,8 +735,9 @@
       nextActionName,
       minDelaySeconds,
       maxDelaySeconds,
+      actionVariancePercent,
+      enabledActions: { ...enabledActions },
       minutesValue: minutesInput.value,
-      randomRefreshEnabled,
       lockComputerWhenFinished,
       panelPosition
     };
@@ -676,10 +749,16 @@
     panelOpen = session.panelOpen !== false;
     minDelaySeconds = Number(session.minDelaySeconds ?? minDelaySeconds);
     maxDelaySeconds = Number(session.maxDelaySeconds ?? maxDelaySeconds);
+    actionVariancePercent = Number(session.actionVariancePercent ?? actionVariancePercent);
     actionCount = Number(session.actionCount ?? 0);
     nextActionAt = Number(session.nextActionAt ?? 0);
     nextActionName = session.nextActionName ?? "-";
-    randomRefreshEnabled = Boolean(session.randomRefreshEnabled);
+    enabledActions = normalizeEnabledActions(
+      session.enabledActions ?? {
+        ...createDefaultActionState(),
+        refresh: session.randomRefreshEnabled !== false
+      }
+    );
     lockComputerWhenFinished = Boolean(session.lockComputerWhenFinished);
     panelPosition = session.panelPosition ?? null;
 
@@ -718,9 +797,11 @@
 
     minDelaySlider.value = String(minDelaySeconds);
     maxDelaySlider.value = String(maxDelaySeconds);
+    actionVarianceSlider.value = String(actionVariancePercent);
     minDelayValue.textContent = formatSeconds(minDelaySeconds);
     maxDelayValue.textContent = formatSeconds(maxDelaySeconds);
-    randomRefreshCheckbox.checked = randomRefreshEnabled;
+    actionVarianceValue.textContent = formatPercent(actionVariancePercent);
+    syncActionToggles();
     lockOnFinishCheckbox.checked = lockComputerWhenFinished;
     actionsValue.textContent = String(actionCount);
 
@@ -749,11 +830,12 @@
 
   function updateUiState() {
     setStatus(statusMode);
-    nextActionValue.textContent = nextActionName;
+    nextActionValue.textContent = formatActionName(nextActionName);
     actionsValue.textContent = String(actionCount);
     minDelayValue.textContent = formatSeconds(minDelaySeconds);
     maxDelayValue.textContent = formatSeconds(maxDelaySeconds);
-    randomRefreshCheckbox.checked = randomRefreshEnabled;
+    actionVarianceValue.textContent = formatPercent(actionVariancePercent);
+    syncActionToggles();
     lockOnFinishCheckbox.checked = lockComputerWhenFinished;
     versionValue.textContent = `v${extensionVersion}`;
     updateNoteValue.textContent = updateStatusText;
@@ -814,23 +896,21 @@
     cursor.style.transform = `translate(${x}px, ${y}px)`;
   }
 
-  function startCursorAnimation() {
+  function showCursorForMove(x, y) {
     stopCursorAnimation();
     cursor.style.display = "block";
+    moveCursor(x, y);
 
-    const point = randomCenterPoint();
-    moveCursor(jitter(point.x), jitter(point.y));
-
-    cursorTimer = window.setInterval(() => {
-      const nextPoint = randomCenterPoint();
-      moveCursor(jitter(nextPoint.x), jitter(nextPoint.y));
-    }, 900 + Math.random() * 600);
+    cursorTimer = window.setTimeout(() => {
+      cursor.style.display = "none";
+      cursorTimer = null;
+    }, 900);
   }
 
   function stopCursorAnimation() {
     cursor.style.display = "none";
     if (cursorTimer) {
-      window.clearInterval(cursorTimer);
+      window.clearTimeout(cursorTimer);
       cursorTimer = null;
     }
   }
@@ -878,14 +958,16 @@
 
   function runMouseMove() {
     const point = randomCenterPoint();
-    moveCursor(jitter(point.x), jitter(point.y));
+    const x = jitter(point.x);
+    const y = jitter(point.y);
+    showCursorForMove(x, y);
 
     document.dispatchEvent(
       new MouseEvent("mousemove", {
         bubbles: true,
         cancelable: true,
-        clientX: point.x,
-        clientY: point.y,
+        clientX: x,
+        clientY: y,
         view: window
       })
     );
@@ -935,33 +1017,29 @@
   }
 
   function pickAction() {
-    const roll = Math.random();
-
-    if (randomRefreshEnabled) {
-      if (roll < 0.5) {
-        return "scroll";
-      }
-
-      if (roll < 0.75) {
-        return "move";
-      }
-
-      if (roll < 0.9) {
-        return "click";
-      }
-
-      return "refresh";
-    }
-
-    if (roll < 0.55) {
+    const baseWeights = Object.entries(ACTION_WEIGHTS).filter(([actionName]) => enabledActions[actionName]);
+    if (baseWeights.length === 0) {
       return "scroll";
     }
 
-    if (roll < 0.8) {
-      return "move";
+    const varianceFactor = actionVariancePercent / 100;
+    const adjustedEntries = baseWeights.map(([name, weight]) => {
+      const variance = (Math.random() * 2 - 1) * varianceFactor;
+      return [name, Math.max(0.01, weight * (1 + variance))];
+    });
+
+    const totalWeight = adjustedEntries.reduce((sum, [, weight]) => sum + weight, 0);
+    let roll = Math.random() * totalWeight;
+
+    for (const [name, weight] of adjustedEntries) {
+      if (roll < weight) {
+        return name;
+      }
+
+      roll -= weight;
     }
 
-    return "click";
+    return adjustedEntries[adjustedEntries.length - 1][0];
   }
 
   function handleMinutesTyping() {
@@ -1059,8 +1137,27 @@
     }
   }
 
-  async function handleRandomRefreshToggle() {
-    randomRefreshEnabled = randomRefreshCheckbox.checked;
+  async function handleActionVarianceChange() {
+    actionVariancePercent = Number.parseInt(actionVarianceSlider.value, 10);
+    actionVarianceValue.textContent = formatPercent(actionVariancePercent);
+    await persistSession();
+  }
+
+  async function handleActionToggle(actionName) {
+    enabledActions[actionName] = Boolean(actionToggleInputs[actionName]?.checked);
+
+    if (!Object.values(enabledActions).some(Boolean)) {
+      enabledActions[actionName] = true;
+      actionToggleInputs[actionName].checked = true;
+      updateStatusText = "At least one action must stay enabled.";
+    }
+
+    if (nextActionName !== "-" && !enabledActions[nextActionName]) {
+      nextActionName = pickAction();
+      nextActionValue.textContent = formatActionName(nextActionName);
+    }
+
+    updateUiState();
     await persistSession();
   }
 
@@ -1111,7 +1208,7 @@
     const delay = freshCycle ? randomDelayMs() : randomDelayMs();
     nextActionAt = Date.now() + delay;
     nextActionName = pickAction();
-    nextActionValue.textContent = nextActionName;
+    nextActionValue.textContent = formatActionName(nextActionName);
     void persistSession();
 
     if (loopTimer) {
@@ -1187,6 +1284,10 @@
     return `${value}s`;
   }
 
+  function formatPercent(value) {
+    return `${value}%`;
+  }
+
   async function handleStartClick() {
     if (statusMode === STATUS.PAUSED) {
       await resumeSession();
@@ -1216,7 +1317,6 @@
     setStatus(STATUS.RUNNING);
     updateUiState();
     void requestWakeLock();
-    startCursorAnimation();
     startStatsLoop();
     scheduleNextAction({ freshCycle: true });
     await persistSession();
@@ -1231,7 +1331,6 @@
     setStatus(STATUS.RUNNING);
     updateUiState();
     void requestWakeLock();
-    startCursorAnimation();
     startStatsLoop();
     scheduleNextAction({ freshCycle: true });
     await persistSession();
@@ -1313,6 +1412,11 @@
   }
 
   function handleDragStart(event) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
     isDragging = true;
     dragOffsetX = event.clientX - panel.getBoundingClientRect().left;
     dragOffsetY = event.clientY - panel.getBoundingClientRect().top;
@@ -1381,5 +1485,45 @@
     await clearSavedSession();
     root.remove();
     delete window.__humanActivityExtension;
+  }
+
+  function createDefaultActionState() {
+    return {
+      scroll: true,
+      move: true,
+      click: true,
+      refresh: true
+    };
+  }
+
+  function normalizeEnabledActions(candidate) {
+    const normalized = createDefaultActionState();
+
+    for (const actionName of Object.keys(normalized)) {
+      if (candidate && Object.prototype.hasOwnProperty.call(candidate, actionName)) {
+        normalized[actionName] = Boolean(candidate[actionName]);
+      }
+    }
+
+    if (!Object.values(normalized).some(Boolean)) {
+      normalized.scroll = true;
+    }
+
+    return normalized;
+  }
+
+  function syncActionToggles() {
+    for (const [actionName, input] of Object.entries(actionToggleInputs)) {
+      input.checked = enabledActions[actionName];
+      input.title = `${ACTION_LABELS[actionName]} (${formatPercent(Math.round(ACTION_WEIGHTS[actionName] * 100))})`;
+    }
+  }
+
+  function formatActionName(actionName) {
+    if (actionName === "-") {
+      return actionName;
+    }
+
+    return ACTION_LABELS[actionName]?.toLowerCase() ?? actionName;
   }
 })();
