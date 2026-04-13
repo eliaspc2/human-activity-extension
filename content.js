@@ -397,14 +397,30 @@
       }
 
       #${PANEL_ID} input[type="number"] {
+        appearance: textfield;
+        -moz-appearance: textfield;
+        -webkit-appearance: none;
         width: 100%;
         min-width: 0;
+        min-height: 38px;
         padding: 8px 10px;
         border-radius: 10px;
         border: 1px solid rgba(255, 255, 255, 0.08);
         background: rgba(255, 255, 255, 0.06);
         color: #f7f4ff;
+        -webkit-text-fill-color: #f7f4ff;
+        opacity: 1;
         text-align: center;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.2;
+        font-variant-numeric: tabular-nums;
+        caret-color: #8bff74;
+      }
+
+      #${PANEL_ID} input[type="number"]::-webkit-outer-spin-button,
+      #${PANEL_ID} input[type="number"]::-webkit-inner-spin-button {
+        margin: 0;
       }
 
       #${PANEL_ID} .hae-number-suffix {
