@@ -3,6 +3,8 @@ const actionApi = extensionApi.action ?? extensionApi.browserAction;
 const runtimeApi = extensionApi.runtime;
 const storageArea = extensionApi.storage?.local;
 const tabsApi = extensionApi.tabs;
+let pendingManualUpdateInstall = false;
+const NATIVE_LOCK_HOST = "dev.eliaspc.human_activity_lock";
 
 const RESTRICTED_URL_PREFIXES = [
   "about:",
@@ -49,6 +51,92 @@ async function setTabSession(tabId, sessionState) {
 
 async function clearTabSession(tabId) {
   await storageArea.remove(getSessionKey(tabId));
+}
+
+async function requestManualUpdateCheck() {
+  if (typeof runtimeApi.requestUpdateCheck !== "function") {
+    return {
+      ok: false,
+      error: "Manual update checks are not supported in this browser."
+    };
+  }
+
+  try {
+    const result = await runtimeApi.requestUpdateCheck();
+    const status = result?.status ?? "unknown";
+    const version = result?.version ?? null;
+
+    if (status === "update_available") {
+      pendingManualUpdateInstall = true;
+    } else {
+      pendingManualUpdateInstall = false;
+    }
+
+    return {
+      ok: true,
+      status,
+      version,
+      currentVersion: runtimeApi.getManifest?.().version ?? null
+    };
+  } catch (error) {
+    pendingManualUpdateInstall = false;
+    return {
+      ok: false,
+      error: error?.message ?? String(error)
+    };
+  }
+}
+
+async function lockComputer() {
+  if (typeof runtimeApi.sendNativeMessage !== "function") {
+    return {
+      ok: false,
+      error: "Native messaging is not supported in this browser."
+    };
+  }
+
+  try {
+    const response = await runtimeApi.sendNativeMessage(NATIVE_LOCK_HOST, {
+      action: "lock"
+    });
+
+    return {
+      ok: response?.ok !== false,
+      command: response?.command ?? null,
+      locked: Boolean(response?.locked),
+      error: response?.error ?? null
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error?.message ?? String(error)
+    };
+  }
+}
+
+async function pingLockHost() {
+  if (typeof runtimeApi.sendNativeMessage !== "function") {
+    return false;
+  }
+
+  try {
+    const response = await runtimeApi.sendNativeMessage(NATIVE_LOCK_HOST, {
+      action: "ping"
+    });
+    return response?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function getRuntimeInfo() {
+  return {
+    ok: true,
+    version: runtimeApi.getManifest?.().version ?? null,
+    manualUpdateSupported: typeof runtimeApi.requestUpdateCheck === "function",
+    lockComputerSupported: typeof runtimeApi.sendNativeMessage === "function",
+    lockComputerReady: await pingLockHost()
+  };
 }
 
 async function injectController(tabId) {
@@ -122,6 +210,21 @@ runtimeApi.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
+    if (message?.type === "hae:get-runtime-info") {
+      sendResponse(await getRuntimeInfo());
+      return;
+    }
+
+    if (message?.type === "hae:check-updates") {
+      sendResponse(await requestManualUpdateCheck());
+      return;
+    }
+
+    if (message?.type === "hae:lock-computer") {
+      sendResponse(await lockComputer());
+      return;
+    }
+
     sendResponse({ ok: false, error: "Unsupported message type." });
   })();
 
@@ -144,3 +247,15 @@ tabsApi.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 tabsApi.onRemoved.addListener(async (tabId) => {
   await clearTabSession(tabId);
 });
+
+if (runtimeApi.onUpdateAvailable?.addListener) {
+  runtimeApi.onUpdateAvailable.addListener((details) => {
+    if (!pendingManualUpdateInstall) {
+      return;
+    }
+
+    pendingManualUpdateInstall = false;
+    console.info("Installing Human Activity Extension update.", details?.version);
+    runtimeApi.reload();
+  });
+}

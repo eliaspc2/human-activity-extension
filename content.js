@@ -29,7 +29,7 @@
   let nextActionName = "-";
   let minDelaySeconds = 5;
   let maxDelaySeconds = 30;
-  let randomRefreshEnabled = false;
+  let randomRefreshEnabled = true;
   let isDragging = false;
   let dragOffsetX = 0;
   let dragOffsetY = 0;
@@ -39,6 +39,12 @@
   let wakeLock = null;
   let focusPulseTimer = null;
   let panelPosition = null;
+  let extensionVersion = extensionApi.runtime?.getManifest?.().version ?? "?";
+  let manualUpdateSupported = false;
+  let lockComputerSupported = false;
+  let lockComputerReady = false;
+  let lockComputerWhenFinished = false;
+  let updateStatusText = "";
 
   injectStyles();
 
@@ -71,6 +77,11 @@
       <button class="hae-button hae-button-pause" id="hae-pause" type="button">❚❚ Pause</button>
       <button class="hae-button hae-button-stop" id="hae-stop" type="button">■ Stop</button>
     </div>
+    <div class="hae-utility-row">
+      <button class="hae-chip hae-chip-wide" id="hae-check-updates" type="button">Check updates</button>
+      <span class="hae-version" id="hae-version">v?</span>
+    </div>
+    <div class="hae-update-note" id="hae-update-note"></div>
     <label class="hae-label" for="hae-minutes">Duration</label>
     <div class="hae-duration-row">
       <div class="hae-number-wrap">
@@ -103,8 +114,12 @@
       </div>
     </div>
     <label class="hae-checkbox-row" for="hae-random-refresh">
-      <input id="hae-random-refresh" type="checkbox" />
+      <input id="hae-random-refresh" type="checkbox" checked />
       <span>Allow random refreshes</span>
+    </label>
+    <label class="hae-checkbox-row" for="hae-lock-on-finish">
+      <input id="hae-lock-on-finish" type="checkbox" />
+      <span>Lock computer when finished</span>
     </label>
     <div class="hae-status-grid">
       <div class="hae-status-row">
@@ -133,6 +148,7 @@
   const startButton = panel.querySelector("#hae-start");
   const pauseButton = panel.querySelector("#hae-pause");
   const stopButton = panel.querySelector("#hae-stop");
+  const checkUpdatesButton = panel.querySelector("#hae-check-updates");
   const closeButton = panel.querySelector("#hae-close");
   const progressBar = panel.querySelector("#hae-progress-bar");
   const minutesInput = panel.querySelector("#hae-minutes");
@@ -144,6 +160,9 @@
   const minDelayValue = panel.querySelector("#hae-min-delay-value");
   const maxDelayValue = panel.querySelector("#hae-max-delay-value");
   const randomRefreshCheckbox = panel.querySelector("#hae-random-refresh");
+  const lockOnFinishCheckbox = panel.querySelector("#hae-lock-on-finish");
+  const versionValue = panel.querySelector("#hae-version");
+  const updateNoteValue = panel.querySelector("#hae-update-note");
   const statusValue = panel.querySelector("#hae-status");
   const nextActionValue = panel.querySelector("#hae-next-action");
   const countdownValue = panel.querySelector("#hae-countdown");
@@ -159,9 +178,11 @@
   minDelaySlider.addEventListener("input", () => void syncDelayRange());
   maxDelaySlider.addEventListener("input", () => void syncDelayRange());
   randomRefreshCheckbox.addEventListener("change", () => void handleRandomRefreshToggle());
+  lockOnFinishCheckbox.addEventListener("change", () => void handleLockOnFinishToggle());
   startButton.addEventListener("click", () => void handleStartClick());
   pauseButton.addEventListener("click", () => void pauseSession());
   stopButton.addEventListener("click", () => void stopSession(STATUS.STOPPED));
+  checkUpdatesButton.addEventListener("click", () => void handleCheckUpdatesClick());
   closeButton.addEventListener("click", () => void destroy());
   dragbar.addEventListener("mousedown", handleDragStart);
   document.addEventListener("mousemove", handleDragMove);
@@ -180,6 +201,19 @@
   void initialize();
 
   async function initialize() {
+    const runtimeInfo = await loadRuntimeInfo();
+    if (runtimeInfo?.ok) {
+      extensionVersion = runtimeInfo.version ?? extensionVersion;
+      manualUpdateSupported = Boolean(runtimeInfo.manualUpdateSupported);
+      lockComputerSupported = Boolean(runtimeInfo.lockComputerSupported);
+      lockComputerReady = Boolean(runtimeInfo.lockComputerReady);
+      updateStatusText = manualUpdateSupported ? "Manual update check ready." : "Manual update check unavailable.";
+
+      if (!lockComputerReady) {
+        updateStatusText = "Install the native host to enable computer lock.";
+      }
+    }
+
     const savedSession = await loadSavedSession();
 
     if (savedSession?.panelPosition) {
@@ -355,7 +389,7 @@
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
-        margin-bottom: 14px;
+        margin-bottom: 10px;
       }
 
       #${PANEL_ID} .hae-button {
@@ -439,6 +473,34 @@
         padding: 8px 0;
         background: rgba(255, 255, 255, 0.05);
         color: rgba(235, 232, 255, 0.92);
+        font-size: 11px;
+      }
+
+      #${PANEL_ID} .hae-chip-wide {
+        width: 100%;
+        padding: 8px 10px;
+        text-align: center;
+      }
+
+      #${PANEL_ID} .hae-utility-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      #${PANEL_ID} .hae-version {
+        color: rgba(203, 198, 229, 0.78);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+
+      #${PANEL_ID} .hae-update-note {
+        min-height: 16px;
+        margin-bottom: 12px;
+        color: rgba(203, 198, 229, 0.74);
         font-size: 11px;
       }
 
@@ -570,6 +632,10 @@
     return response?.ok ? response.session : null;
   }
 
+  async function loadRuntimeInfo() {
+    return sendRuntimeMessage({ type: "hae:get-runtime-info" });
+  }
+
   async function persistSession() {
     if (!panelOpen) {
       return;
@@ -599,6 +665,7 @@
       maxDelaySeconds,
       minutesValue: minutesInput.value,
       randomRefreshEnabled,
+      lockComputerWhenFinished,
       panelPosition
     };
   }
@@ -613,6 +680,7 @@
     nextActionAt = Number(session.nextActionAt ?? 0);
     nextActionName = session.nextActionName ?? "-";
     randomRefreshEnabled = Boolean(session.randomRefreshEnabled);
+    lockComputerWhenFinished = Boolean(session.lockComputerWhenFinished);
     panelPosition = session.panelPosition ?? null;
 
     if (session.minutesValue) {
@@ -653,6 +721,7 @@
     minDelayValue.textContent = formatSeconds(minDelaySeconds);
     maxDelayValue.textContent = formatSeconds(maxDelaySeconds);
     randomRefreshCheckbox.checked = randomRefreshEnabled;
+    lockOnFinishCheckbox.checked = lockComputerWhenFinished;
     actionsValue.textContent = String(actionCount);
 
     if (statusMode === STATUS.RUNNING && getRemainingMs(now) <= 0) {
@@ -685,10 +754,15 @@
     minDelayValue.textContent = formatSeconds(minDelaySeconds);
     maxDelayValue.textContent = formatSeconds(maxDelaySeconds);
     randomRefreshCheckbox.checked = randomRefreshEnabled;
+    lockOnFinishCheckbox.checked = lockComputerWhenFinished;
+    versionValue.textContent = `v${extensionVersion}`;
+    updateNoteValue.textContent = updateStatusText;
 
     startButton.disabled = statusMode === STATUS.RUNNING;
     pauseButton.disabled = statusMode !== STATUS.RUNNING;
     stopButton.disabled = [STATUS.IDLE, STATUS.STOPPED, STATUS.FINISHED].includes(statusMode);
+    checkUpdatesButton.disabled = !manualUpdateSupported;
+    lockOnFinishCheckbox.disabled = !lockComputerSupported || !lockComputerReady;
 
     updateStats();
   }
@@ -895,6 +969,43 @@
     minutesInput.value = digitsOnly;
   }
 
+  async function handleCheckUpdatesClick() {
+    if (!manualUpdateSupported) {
+      updateStatusText = "Manual update check unavailable in this browser.";
+      updateUiState();
+      return;
+    }
+
+    checkUpdatesButton.disabled = true;
+    updateStatusText = "Checking for updates...";
+    updateUiState();
+
+    const response = await sendRuntimeMessage({ type: "hae:check-updates" });
+    if (!response?.ok) {
+      updateStatusText = response?.error ?? "Update check failed.";
+      updateUiState();
+      return;
+    }
+
+    if (response.currentVersion) {
+      extensionVersion = response.currentVersion;
+    }
+
+    if (response.status === "update_available") {
+      updateStatusText = response.version
+        ? `Installing v${response.version}...`
+        : "Installing update...";
+    } else if (response.status === "no_update") {
+      updateStatusText = `Already up to date (v${extensionVersion}).`;
+    } else if (response.status === "throttled") {
+      updateStatusText = "Update check throttled. Try again later.";
+    } else {
+      updateStatusText = `Update status: ${response.status}`;
+    }
+
+    updateUiState();
+  }
+
   async function handleMinutesChange() {
     const requestedMinutes = Number.parseFloat(minutesInput.value);
     const normalizedMinutes = Number.isFinite(requestedMinutes) && requestedMinutes > 0 ? requestedMinutes : 60;
@@ -950,6 +1061,19 @@
 
   async function handleRandomRefreshToggle() {
     randomRefreshEnabled = randomRefreshCheckbox.checked;
+    await persistSession();
+  }
+
+  async function handleLockOnFinishToggle() {
+    lockComputerWhenFinished = lockOnFinishCheckbox.checked;
+
+    if (lockComputerWhenFinished && (!lockComputerSupported || !lockComputerReady)) {
+      updateStatusText = "Lock option unavailable until native host is installed.";
+      lockComputerWhenFinished = false;
+      lockOnFinishCheckbox.checked = false;
+    }
+
+    updateUiState();
     await persistSession();
   }
 
@@ -1161,6 +1285,31 @@
     await releaseWakeLock();
     updateUiState();
     await persistSession();
+
+    if (nextStatus === STATUS.FINISHED) {
+      await maybeLockComputerWhenFinished();
+    }
+  }
+
+  async function maybeLockComputerWhenFinished() {
+    if (!lockComputerWhenFinished) {
+      return;
+    }
+
+    updateStatusText = "Locking computer...";
+    updateUiState();
+
+    const response = await sendRuntimeMessage({ type: "hae:lock-computer" });
+    if (!response?.ok) {
+      updateStatusText = response?.error
+        ? `Lock failed: ${response.error}`
+        : "Lock failed. Check native host installation.";
+      updateUiState();
+      return;
+    }
+
+    updateStatusText = response.command ? `Locked via ${response.command}.` : "Computer locked.";
+    updateUiState();
   }
 
   function handleDragStart(event) {

@@ -17,6 +17,8 @@
 - Supports `Pause` and `Resume` without losing session progress.
 - Can restore itself after a page refresh on the same tab.
 - Can optionally include random page refreshes in the activity cycle.
+- Includes a `Check updates` button in the panel for manual update checks.
+- Can lock the computer when the timer finishes if the local native host is installed.
 - Tries to keep the screen awake using the Wake Lock API when available.
 
 ## How it works
@@ -56,15 +58,40 @@ Then:
 2. Click `Load Temporary Add-on`.
 3. Choose the generated `.xpi`, or point Firefox to the repository `manifest.json` while developing.
 
+## Optional: lock the computer when finished
+
+The `Lock computer when finished` option needs a tiny local native host.
+
+From the repository root:
+
+```bash
+python3 install-native-host.py
+```
+
+That installs per-user native messaging manifests for the current OS and for:
+
+- Google Chrome
+- Firefox
+
+and wires them to the local helper in `native/lock_host.py`.
+
+Supported lock backends in the helper:
+
+- Linux: `loginctl`, KDE/ScreenSaver DBus, or `xdg-screensaver`
+- macOS: `CGSession -suspend`
+- Windows: `rundll32 user32.dll,LockWorkStation`
+
 ## Usage
 
 1. Open a regular web page.
 2. Click the extension icon.
 3. Use the floating panel to configure the duration and action interval.
 4. Optionally enable `Allow random refreshes`.
-5. Click `Start`.
-6. Click `Pause` to freeze the session and `Start` again to resume it.
-7. Click `Stop` to halt the session or `x` to remove the panel from the page.
+5. Use `Check updates` if you want to ask the browser to check for a newer extension build.
+6. Optionally enable `Lock computer when finished`.
+7. Click `Start`.
+8. Click `Pause` to freeze the session and `Start` again to resume it.
+9. Click `Stop` to halt the session or `x` to remove the panel from the page.
 
 ## Project structure
 
@@ -74,6 +101,7 @@ Then:
 - `updates.xml` - Chrome update manifest for self-hosted updates.
 - `build-crx.sh` - builds a signed `CRX` using the stable private key.
 - `build-firefox.sh` - creates Firefox-ready release packages from the same codebase.
+- `install-native-host.py` - installs the optional native host for the lock feature on the current OS.
 - `publish-release.sh` - publishes the Chrome and Firefox release artifacts to the matching GitHub release.
 
 ## Packaging
