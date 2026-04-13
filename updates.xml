@@ -2,7 +2,7 @@
 <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
   <app appid="hfdolihdgipfjjkiojkocmcbnbbpjipn">
     <updatecheck
-      codebase="https://github.com/eliaspc2/human-activity-extension/releases/download/v2.3.0/human-activity-extension.crx"
-      version="2.3.0" />
+      codebase="https://github.com/eliaspc2/human-activity-extension/releases/download/v2.4.0/human-activity-extension.crx"
+      version="2.4.0" />
   </app>
 </gupdate>

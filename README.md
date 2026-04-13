@@ -2,13 +2,13 @@
 
 `Human Activity Extension` is a free and open-source browser extension for Chrome and Firefox that injects a floating controller into the current tab and simulates low-intensity activity patterns inspired by the original bookmarklet.
 
-[![Install on Chrome](https://img.shields.io/badge/Install_on_Chrome-GitHub_build-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](#install-in-chrome-from-github)
+[![Install on Chrome Linux](https://img.shields.io/badge/Install_on_Chrome-Linux_installer-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-linux-installer.sh)
 [![Add to Firefox](https://img.shields.io/badge/Add_to_Firefox-GitHub_build-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white)](#install-in-firefox-from-github)
 [![Latest Release](https://img.shields.io/github/v/release/eliaspc2/human-activity-extension?style=for-the-badge)](https://github.com/eliaspc2/human-activity-extension/releases/latest)
 
 ## Quick install
 
-- [Install on Chrome](#install-in-chrome-from-github)
+- [Install on Chrome on Linux](#install-in-chrome-on-linux)
 - [Add to Firefox](#install-in-firefox-from-github)
 - [Latest release assets](https://github.com/eliaspc2/human-activity-extension/releases/latest)
 
@@ -37,9 +37,29 @@
 
 The extension does not run automatically on every site. Click the extension icon while you are on a normal web page, and it injects the controller into that tab.
 
+## Install in Chrome on Linux
+
+The closest thing to a one-command install on Chrome is the Linux installer script:
+
+```bash
+curl -fsSL -o /tmp/human-activity-extension-linux-installer.sh \
+  https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-linux-installer.sh
+
+bash /tmp/human-activity-extension-linux-installer.sh --restart-chrome
+```
+
+What it does:
+
+- downloads the latest signed `CRX`
+- installs the Chrome external-extension bootstrap files under `/opt/google/chrome/`
+- can restart `Google Chrome` to make the install land immediately
+- restores the normal GitHub update channel after the bootstrap succeeds
+
+If you prefer, clicking the `Install on Chrome` badge downloads the same installer script.
+
 ## Install in Chrome from GitHub
 
-Direct one-click install is not available from GitHub alone in Chrome, so the GitHub path is:
+Direct public one-click install is still not available from GitHub alone in Chrome outside Linux/admin flows, so the manual GitHub path is:
 
 1. Download the latest source package or clone this repository.
 2. Open `chrome://extensions`.
@@ -49,6 +69,7 @@ Direct one-click install is not available from GitHub alone in Chrome, so the Gi
 
 Useful links:
 
+- [Latest Linux installer](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-linux-installer.sh)
 - [Latest release page](https://github.com/eliaspc2/human-activity-extension/releases/latest)
 - [Latest universal zip](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-universal.zip)
 - [Repository source](https://github.com/eliaspc2/human-activity-extension)
@@ -138,6 +159,7 @@ Supported lock backends in the helper:
 - `background.js` - toolbar click handler with Chrome and Firefox API fallbacks.
 - `content.js` - floating UI and simulation logic injected into the current tab.
 - `updates.xml` - Chrome update manifest for self-hosted updates.
+- `install-chrome.sh` - Linux installer that bootstraps Chrome and restores the GitHub update channel.
 - `build-crx.sh` - builds a signed `CRX` using the stable private key.
 - `build-firefox.sh` - creates Firefox-ready release packages from the same codebase.
 - `install-native-host.py` - installs the optional native host for the lock feature on the current OS.

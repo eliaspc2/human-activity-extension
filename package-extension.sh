@@ -16,6 +16,7 @@ rm -f "$ARCHIVE_PATH" "$UNIVERSAL_ARCHIVE_PATH"
     background.js \
     content.js \
     icons \
+    install-chrome.sh \
     native \
     install-native-host.py \
     install-native-host.sh \
