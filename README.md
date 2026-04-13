@@ -2,6 +2,16 @@
 
 `Human Activity Extension` is a free and open-source browser extension for Chrome and Firefox that injects a floating controller into the current tab and simulates low-intensity activity patterns inspired by the original bookmarklet.
 
+[![Install on Chrome](https://img.shields.io/badge/Install_on_Chrome-GitHub_build-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](#install-in-chrome-from-github)
+[![Add to Firefox](https://img.shields.io/badge/Add_to_Firefox-GitHub_build-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white)](#install-in-firefox-from-github)
+[![Latest Release](https://img.shields.io/github/v/release/eliaspc2/human-activity-extension?style=for-the-badge)](https://github.com/eliaspc2/human-activity-extension/releases/latest)
+
+## Quick install
+
+- [Install on Chrome](#install-in-chrome-from-github)
+- [Add to Firefox](#install-in-firefox-from-github)
+- [Latest release assets](https://github.com/eliaspc2/human-activity-extension/releases/latest)
+
 ## What it does
 
 - Adds a draggable control panel to the current page.
@@ -25,6 +35,22 @@
 
 The extension does not run automatically on every site. Click the extension icon while you are on a normal web page, and it injects the controller into that tab.
 
+## Install in Chrome from GitHub
+
+Direct one-click install is not available from GitHub alone in Chrome, so the GitHub path is:
+
+1. Download the latest source package or clone this repository.
+2. Open `chrome://extensions`.
+3. Enable `Developer mode`.
+4. Click `Load unpacked`.
+5. Select the extracted project folder.
+
+Useful links:
+
+- [Latest release page](https://github.com/eliaspc2/human-activity-extension/releases/latest)
+- [Latest universal zip](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-universal.zip)
+- [Repository source](https://github.com/eliaspc2/human-activity-extension)
+
 ## Install locally in Chrome
 
 1. Clone or download this repository.
@@ -36,6 +62,16 @@ The extension does not run automatically on every site. Click the extension icon
 ```text
 /path/to/human-activity-extension
 ```
+
+## Install in Firefox from GitHub
+
+Firefox can use the GitHub build directly, but for a normal permanent install it still needs Mozilla signing. From GitHub, the practical path is:
+
+1. Download the latest Firefox package:
+   - [Latest Firefox XPI](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-firefox.xpi)
+2. Open `about:debugging#/runtime/this-firefox`.
+3. Click `Load Temporary Add-on`.
+4. Choose the downloaded `.xpi`.
 
 ## Install locally in Firefox
 

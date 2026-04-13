@@ -7,21 +7,25 @@ TAG="v$VERSION"
 CRX_PATH="$ROOT_DIR.crx"
 FIREFOX_ZIP_PATH="$ROOT_DIR/dist/human-activity-extension-firefox.zip"
 FIREFOX_XPI_PATH="$ROOT_DIR/dist/human-activity-extension-firefox.xpi"
+UNIVERSAL_ZIP_PATH="$ROOT_DIR/dist/human-activity-extension-universal.zip"
 
 "$ROOT_DIR/build-crx.sh"
 "$ROOT_DIR/build-firefox.sh"
+"$ROOT_DIR/package-extension.sh"
 
 if gh release view "$TAG" >/dev/null 2>&1; then
   gh release upload "$TAG" \
     "$CRX_PATH#human-activity-extension.crx" \
     "$FIREFOX_ZIP_PATH#human-activity-extension-firefox.zip" \
     "$FIREFOX_XPI_PATH#human-activity-extension-firefox.xpi" \
+    "$UNIVERSAL_ZIP_PATH#human-activity-extension-universal.zip" \
     --clobber
 else
   gh release create "$TAG" \
     "$CRX_PATH#human-activity-extension.crx" \
     "$FIREFOX_ZIP_PATH#human-activity-extension-firefox.zip" \
     "$FIREFOX_XPI_PATH#human-activity-extension-firefox.xpi" \
+    "$UNIVERSAL_ZIP_PATH#human-activity-extension-universal.zip" \
     --title "$TAG" \
     --notes "Cross-browser release for Human Activity Extension $VERSION."
 fi
