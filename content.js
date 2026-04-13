@@ -113,7 +113,7 @@
       </div>
       <div class="hae-status-row">
         <span class="hae-status-label">Remaining</span>
-        <strong class="hae-status-value hae-status-value-warning hae-status-span" id="hae-countdown">-</strong>
+        <strong class="hae-status-value hae-status-value-warning hae-status-value-neutral" id="hae-countdown">-</strong>
       </div>
     </div>
   `;
@@ -474,6 +474,7 @@
 
       #${PANEL_ID} .hae-status-row:last-child {
         grid-template-columns: auto 1fr;
+        align-items: center;
       }
 
       #${PANEL_ID} .hae-status-label {
@@ -500,8 +501,8 @@
         font-size: 16px;
       }
 
-      #${PANEL_ID} .hae-status-span {
-        grid-column: span 3;
+      #${PANEL_ID} .hae-status-row:last-child .hae-status-value {
+        justify-self: end;
         text-align: right;
       }
     `;
@@ -602,6 +603,11 @@
       sessionTotalMs = Number(session.sessionTotalMs ?? sessionTotalMs);
       accumulatedElapsedMs = Number(session.accumulatedElapsedMs ?? 0);
       currentRunStartedAt = Number(session.currentRunStartedAt ?? 0);
+
+      // Treat a persisted refresh as an in-flight running session after reload.
+      if (statusMode === STATUS.REFRESHING) {
+        statusMode = STATUS.RUNNING;
+      }
     } else {
       const legacyStartedAt = Number(session.sessionStartedAt ?? 0);
       const legacyEndsAt = Number(session.sessionEndsAt ?? 0);
