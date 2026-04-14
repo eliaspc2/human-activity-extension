@@ -56,6 +56,7 @@
   let manualUpdateSupported = false;
   let lockComputerSupported = false;
   let lockComputerReady = false;
+  let idleInhibitReady = false;
   let lockComputerWhenFinished = false;
   let updateStatusText = "";
 
@@ -254,10 +255,11 @@
       manualUpdateSupported = Boolean(runtimeInfo.manualUpdateSupported);
       lockComputerSupported = Boolean(runtimeInfo.lockComputerSupported);
       lockComputerReady = Boolean(runtimeInfo.lockComputerReady);
+      idleInhibitReady = Boolean(runtimeInfo.idleInhibitReady);
       updateStatusText = manualUpdateSupported ? "Manual update check ready." : "Manual update check unavailable.";
 
-      if (!lockComputerReady) {
-        updateStatusText = "Install the native host to enable computer lock.";
+      if (!lockComputerReady && !idleInhibitReady) {
+        updateStatusText = "Install the native host to enable anti-lock and computer lock.";
       }
     }
 

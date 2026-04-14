@@ -31,7 +31,8 @@
 - Lets you enable or disable `scroll`, `mouse move`, `click`, and `refresh` separately, starting from an average-human profile.
 - Includes a `Check updates` control in the panel header for manual update checks.
 - Can lock the computer when the timer finishes if the local native host is installed.
-- Tries to keep the screen awake using the Wake Lock API when available.
+- Keeps automatic screen locking inhibited only while a session is actively running when the local native host is installed.
+- Tries to keep the screen awake using the Wake Lock API when available as an extra browser-level fallback.
 
 ## How it works
 
@@ -117,9 +118,12 @@ Then:
 2. Click `Load Temporary Add-on`.
 3. Choose the generated `.xpi`, or point Firefox to the repository `manifest.json` while developing.
 
-## Optional: lock the computer when finished
+## Optional: native helper for anti-lock and finish lock
 
-The `Lock computer when finished` option needs a tiny local native host.
+The local native host unlocks two system-level behaviors:
+
+- prevent automatic screen locking only while the session is actively `RUNNING`
+- power the optional `Lock computer when finished` checkbox
 
 From the repository root:
 
@@ -134,11 +138,17 @@ That installs per-user native messaging manifests for the current OS and for:
 
 and wires them to the local helper in `native/lock_host.py`.
 
-Supported lock backends in the helper:
+Supported native backends in the helper:
 
-- Linux: `loginctl`, KDE/ScreenSaver DBus, or `xdg-screensaver`
-- macOS: `CGSession -suspend`
-- Windows: `rundll32 user32.dll,LockWorkStation`
+- Linux:
+  - anti-lock while running: `systemd-inhibit` with `gnome-session-inhibit` as fallback
+  - finish lock: `loginctl`, KDE/ScreenSaver DBus, or `xdg-screensaver`
+- macOS:
+  - anti-lock while running: `caffeinate`
+  - finish lock: `CGSession -suspend`
+- Windows:
+  - anti-lock while running: `SetThreadExecutionState`
+  - finish lock: `rundll32 user32.dll,LockWorkStation`
 
 ## Usage
 
@@ -148,10 +158,11 @@ Supported lock backends in the helper:
 4. Leave the default action mix as-is for a medium human profile, or toggle individual actions on and off.
 5. Adjust `Action variance` if you want the action weights to fluctuate more or less over time.
 6. Use the `↻` button in the panel header if you want to ask the browser to check for a newer extension build.
-7. Optionally enable `Lock computer when finished`.
-8. Click `Start`.
-9. Click `Pause` to freeze the session and `Start` again to resume it.
-10. Click `Stop` to halt the session or `x` to remove the panel from the page.
+7. If the native host is installed, the extension automatically suppresses auto-lock only while the session is running.
+8. Optionally enable `Lock computer when finished`.
+9. Click `Start`.
+10. Click `Pause` to freeze the session and `Start` again to resume it.
+11. Click `Stop` to halt the session or `x` to remove the panel from the page.
 
 ## Project structure
 
@@ -162,7 +173,7 @@ Supported lock backends in the helper:
 - `install-chrome.sh` - Linux installer that bootstraps Chrome and restores the GitHub update channel.
 - `build-crx.sh` - builds a signed `CRX` using the stable private key.
 - `build-firefox.sh` - creates Firefox-ready release packages from the same codebase.
-- `install-native-host.py` - installs the optional native host for the lock feature on the current OS.
+- `install-native-host.py` - installs the optional native host for anti-lock while running and computer lock on finish.
 - `publish-release.sh` - publishes the Chrome and Firefox release artifacts to the matching GitHub release.
 
 ## Packaging

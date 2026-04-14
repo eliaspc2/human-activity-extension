@@ -3,8 +3,16 @@ const actionApi = extensionApi.action ?? extensionApi.browserAction;
 const runtimeApi = extensionApi.runtime;
 const storageArea = extensionApi.storage?.local;
 const tabsApi = extensionApi.tabs;
-let pendingManualUpdateInstall = false;
 const NATIVE_LOCK_HOST = "dev.eliaspc.human_activity_lock";
+const SESSION_KEY_PREFIX = "hae-tab-session:";
+const ACTIVE_SESSION_STATES = new Set(["RUNNING", "REFRESHING"]);
+const NATIVE_PORT_TIMEOUT_MS = 5000;
+
+let pendingManualUpdateInstall = false;
+let nativeInhibitPort = null;
+let nativeInhibitActive = false;
+let nativeInhibitStartPromise = null;
+let nativeInhibitStopPromise = null;
 
 const RESTRICTED_URL_PREFIXES = [
   "about:",
@@ -19,8 +27,6 @@ const RESTRICTED_URL_PREFIXES = [
   "vivaldi://"
 ];
 
-const SESSION_KEY_PREFIX = "hae-tab-session:";
-
 function isSupportedTab(tab) {
   return Boolean(
     tab?.id &&
@@ -34,12 +40,20 @@ function getSessionKey(tabId) {
 }
 
 async function getTabSession(tabId) {
+  if (!storageArea) {
+    return null;
+  }
+
   const key = getSessionKey(tabId);
   const result = await storageArea.get(key);
   return result[key] ?? null;
 }
 
 async function setTabSession(tabId, sessionState) {
+  if (!storageArea) {
+    return;
+  }
+
   const key = getSessionKey(tabId);
   await storageArea.set({
     [key]: {
@@ -50,7 +64,32 @@ async function setTabSession(tabId, sessionState) {
 }
 
 async function clearTabSession(tabId) {
+  if (!storageArea) {
+    return;
+  }
+
   await storageArea.remove(getSessionKey(tabId));
+}
+
+async function listTabSessions() {
+  if (!storageArea) {
+    return [];
+  }
+
+  const allEntries = await storageArea.get(null);
+  return Object.entries(allEntries)
+    .filter(([key]) => key.startsWith(SESSION_KEY_PREFIX))
+    .map(([, value]) => value)
+    .filter(Boolean);
+}
+
+function sessionNeedsInhibit(session) {
+  return ACTIVE_SESSION_STATES.has(session?.statusMode);
+}
+
+async function hasActiveSessions() {
+  const sessions = await listTabSessions();
+  return sessions.some(sessionNeedsInhibit);
 }
 
 async function requestManualUpdateCheck() {
@@ -66,11 +105,7 @@ async function requestManualUpdateCheck() {
     const status = result?.status ?? "unknown";
     const version = result?.version ?? null;
 
-    if (status === "update_available") {
-      pendingManualUpdateInstall = true;
-    } else {
-      pendingManualUpdateInstall = false;
-    }
+    pendingManualUpdateInstall = status === "update_available";
 
     return {
       ok: true,
@@ -116,26 +151,247 @@ async function lockComputer() {
 
 async function pingLockHost() {
   if (typeof runtimeApi.sendNativeMessage !== "function") {
-    return false;
+    return {
+      ok: false,
+      ready: false
+    };
   }
 
   try {
     const response = await runtimeApi.sendNativeMessage(NATIVE_LOCK_HOST, {
       action: "ping"
     });
-    return response?.ok === true;
+
+    return {
+      ok: response?.ok === true,
+      ready: response?.ok === true,
+      idleInhibitSupported: Boolean(response?.idle_inhibit_supported)
+    };
   } catch {
-    return false;
+    return {
+      ok: false,
+      ready: false
+    };
   }
 }
 
+function clearNativeInhibitPort() {
+  if (!nativeInhibitPort) {
+    nativeInhibitActive = false;
+    return;
+  }
+
+  try {
+    nativeInhibitPort.disconnect();
+  } catch {
+    // Ignore disconnect races from browsers that already tore the port down.
+  }
+
+  nativeInhibitPort = null;
+  nativeInhibitActive = false;
+}
+
+function ensureNativeInhibitPort() {
+  if (typeof runtimeApi.connectNative !== "function") {
+    return {
+      ok: false,
+      error: "Native messaging ports are not supported in this browser."
+    };
+  }
+
+  if (nativeInhibitPort) {
+    return {
+      ok: true,
+      port: nativeInhibitPort
+    };
+  }
+
+  try {
+    const port = runtimeApi.connectNative(NATIVE_LOCK_HOST);
+    port.onDisconnect.addListener(() => {
+      if (nativeInhibitPort !== port) {
+        return;
+      }
+
+      const errorMessage = runtimeApi.lastError?.message ?? null;
+      nativeInhibitPort = null;
+      nativeInhibitActive = false;
+
+      if (errorMessage) {
+        console.warn("Human Activity native inhibit port disconnected.", errorMessage);
+      }
+    });
+
+    nativeInhibitPort = port;
+
+    return {
+      ok: true,
+      port
+    };
+  } catch (error) {
+    nativeInhibitPort = null;
+    nativeInhibitActive = false;
+    return {
+      ok: false,
+      error: error?.message ?? String(error)
+    };
+  }
+}
+
+function postNativePortMessage(port, message, timeoutMs = NATIVE_PORT_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const cleanup = () => {
+      port.onMessage.removeListener(handleMessage);
+      port.onDisconnect.removeListener(handleDisconnect);
+      clearTimeout(timer);
+    };
+
+    const finish = (payload) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      resolve(payload);
+    };
+
+    const handleMessage = (response) => {
+      finish(response ?? { ok: true });
+    };
+
+    const handleDisconnect = () => {
+      finish({
+        ok: false,
+        error: runtimeApi.lastError?.message ?? "Native inhibit port disconnected."
+      });
+    };
+
+    const timer = setTimeout(() => {
+      finish({
+        ok: false,
+        error: "Timed out while waiting for the native helper."
+      });
+    }, timeoutMs);
+
+    port.onMessage.addListener(handleMessage);
+    port.onDisconnect.addListener(handleDisconnect);
+
+    try {
+      port.postMessage(message);
+    } catch (error) {
+      finish({
+        ok: false,
+        error: error?.message ?? String(error)
+      });
+    }
+  });
+}
+
+async function startNativeInhibit() {
+  if (nativeInhibitActive && nativeInhibitPort) {
+    return {
+      ok: true,
+      active: true,
+      alreadyActive: true
+    };
+  }
+
+  if (nativeInhibitStartPromise) {
+    return nativeInhibitStartPromise;
+  }
+
+  nativeInhibitStartPromise = (async () => {
+    const connection = ensureNativeInhibitPort();
+    if (!connection.ok) {
+      return connection;
+    }
+
+    const response = await postNativePortMessage(connection.port, {
+      action: "start_inhibit"
+    });
+
+    if (!response?.ok) {
+      clearNativeInhibitPort();
+      return response ?? {
+        ok: false,
+        error: "Native inhibit start failed."
+      };
+    }
+
+    nativeInhibitActive = true;
+    return {
+      ok: true,
+      active: true,
+      backend: response.backend ?? null
+    };
+  })().finally(() => {
+    nativeInhibitStartPromise = null;
+  });
+
+  return nativeInhibitStartPromise;
+}
+
+async function stopNativeInhibit() {
+  if (!nativeInhibitPort) {
+    nativeInhibitActive = false;
+    return {
+      ok: true,
+      active: false,
+      alreadyStopped: true
+    };
+  }
+
+  if (nativeInhibitStopPromise) {
+    return nativeInhibitStopPromise;
+  }
+
+  nativeInhibitStopPromise = (async () => {
+    const port = nativeInhibitPort;
+    let response;
+
+    try {
+      response = await postNativePortMessage(port, {
+        action: "stop_inhibit"
+      });
+    } finally {
+      clearNativeInhibitPort();
+      nativeInhibitActive = false;
+    }
+
+    return response ?? {
+      ok: true,
+      active: false
+    };
+  })().finally(() => {
+    nativeInhibitStopPromise = null;
+  });
+
+  return nativeInhibitStopPromise;
+}
+
+async function syncSystemInhibit() {
+  if (await hasActiveSessions()) {
+    return startNativeInhibit();
+  }
+
+  return stopNativeInhibit();
+}
+
 async function getRuntimeInfo() {
+  const hostStatus = await pingLockHost();
+
   return {
     ok: true,
     version: runtimeApi.getManifest?.().version ?? null,
     manualUpdateSupported: typeof runtimeApi.requestUpdateCheck === "function",
     lockComputerSupported: typeof runtimeApi.sendNativeMessage === "function",
-    lockComputerReady: await pingLockHost()
+    lockComputerReady: hostStatus.ready === true,
+    idleInhibitSupported: typeof runtimeApi.connectNative === "function" && hostStatus.ready === true,
+    idleInhibitReady: hostStatus.ready === true && hostStatus.idleInhibitSupported !== false,
+    idleInhibitActive: nativeInhibitActive
   };
 }
 
@@ -195,6 +451,7 @@ runtimeApi.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       await setTabSession(tabId, message.session ?? {});
+      await syncSystemInhibit();
       sendResponse({ ok: true });
       return;
     }
@@ -206,6 +463,7 @@ runtimeApi.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       await clearTabSession(tabId);
+      await syncSystemInhibit();
       sendResponse({ ok: true });
       return;
     }
@@ -246,6 +504,15 @@ tabsApi.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 tabsApi.onRemoved.addListener(async (tabId) => {
   await clearTabSession(tabId);
+  await syncSystemInhibit();
+});
+
+runtimeApi.onStartup?.addListener(() => {
+  void syncSystemInhibit();
+});
+
+runtimeApi.onInstalled?.addListener(() => {
+  void syncSystemInhibit();
 });
 
 if (runtimeApi.onUpdateAvailable?.addListener) {
@@ -259,3 +526,5 @@ if (runtimeApi.onUpdateAvailable?.addListener) {
     runtimeApi.reload();
   });
 }
+
+void syncSystemInhibit();

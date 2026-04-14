@@ -33,7 +33,7 @@ def install_linux() -> list[Path]:
         chrome_manifest,
         {
             "name": HOST_NAME,
-            "description": "Native lock helper for Human Activity Extension",
+            "description": "Native lock and idle inhibit helper for Human Activity Extension",
             "path": str(HOST_SCRIPT),
             "type": "stdio",
             "allowed_origins": [f"chrome-extension://{CHROME_ID}/"]
@@ -43,7 +43,7 @@ def install_linux() -> list[Path]:
         firefox_manifest,
         {
             "name": HOST_NAME,
-            "description": "Native lock helper for Human Activity Extension",
+            "description": "Native lock and idle inhibit helper for Human Activity Extension",
             "path": str(HOST_SCRIPT),
             "type": "stdio",
             "allowed_extensions": [FIREFOX_ID]
@@ -65,7 +65,7 @@ def install_macos() -> list[Path]:
         chrome_manifest,
         {
             "name": HOST_NAME,
-            "description": "Native lock helper for Human Activity Extension",
+            "description": "Native lock and idle inhibit helper for Human Activity Extension",
             "path": str(HOST_SCRIPT),
             "type": "stdio",
             "allowed_origins": [f"chrome-extension://{CHROME_ID}/"]
@@ -75,7 +75,7 @@ def install_macos() -> list[Path]:
         firefox_manifest,
         {
             "name": HOST_NAME,
-            "description": "Native lock helper for Human Activity Extension",
+            "description": "Native lock and idle inhibit helper for Human Activity Extension",
             "path": str(HOST_SCRIPT),
             "type": "stdio",
             "allowed_extensions": [FIREFOX_ID]
@@ -105,7 +105,7 @@ def install_windows() -> list[str]:
         chrome_manifest,
         {
             "name": HOST_NAME,
-            "description": "Native lock helper for Human Activity Extension",
+            "description": "Native lock and idle inhibit helper for Human Activity Extension",
             "path": str(batch_path),
             "type": "stdio",
             "allowed_origins": [f"chrome-extension://{CHROME_ID}/"]
@@ -115,7 +115,7 @@ def install_windows() -> list[str]:
         firefox_manifest,
         {
             "name": HOST_NAME,
-            "description": "Native lock helper for Human Activity Extension",
+            "description": "Native lock and idle inhibit helper for Human Activity Extension",
             "path": str(batch_path),
             "type": "stdio",
             "allowed_extensions": [FIREFOX_ID]
