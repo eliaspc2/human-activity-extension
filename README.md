@@ -58,6 +58,8 @@ What it does:
 
 If you prefer, clicking the `Install on Chrome` badge downloads the same installer script.
 
+If you are testing the normal Chrome update cycle after the extension is already installed, do not rerun the Linux installer. Leave the existing install in place and let Chrome pick up the new version from `update_url`, or use the in-panel `↻` button to request a check.
+
 ## Install in Chrome from GitHub
 
 Direct public one-click install is still not available from GitHub alone in Chrome outside Linux/admin flows, so the manual GitHub path is:
@@ -124,6 +126,8 @@ The local native host unlocks two system-level behaviors:
 
 - prevent automatic screen locking only while the session is actively `RUNNING`
 - power the optional `Lock computer when finished` checkbox
+
+The idle inhibition is released automatically when the session is paused, stopped, finished, the tab goes away, or the browser tears down the native port.
 
 From the repository root:
 
@@ -227,6 +231,8 @@ Important detail:
 - `Load unpacked` does not auto-update
 - Chrome itself performs periodic update checks when the extension is installed through an update manifest
 - the extension does not need to poll GitHub on its own
+- the panel `↻` button only asks the browser to run an update check sooner; it does not bypass Chrome's extension update model
+- if you want to test the update flow, keep the existing installed build and publish a newer signed release plus matching `updates.xml`
 
 To build and publish a signed release asset for the current version:
 
