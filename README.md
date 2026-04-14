@@ -3,12 +3,16 @@
 `Human Activity Extension` is a free and open-source browser extension for Chrome and Firefox that injects a floating controller into the current tab and simulates low-intensity activity patterns inspired by the original bookmarklet.
 
 [![Install on Chrome Linux](https://img.shields.io/badge/Install_on_Chrome-Linux_installer-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-linux-installer.sh)
+[![Setup Chrome macOS](https://img.shields.io/badge/Setup_Chrome-macOS_helper-555555?style=for-the-badge&logo=googlechrome&logoColor=white)](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-macos-installer.sh)
+[![Setup Chrome Windows](https://img.shields.io/badge/Setup_Chrome-Windows_helper-0078D4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-windows-installer.ps1)
 [![Add to Firefox](https://img.shields.io/badge/Add_to_Firefox-GitHub_build-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white)](#install-in-firefox-from-github)
 [![Latest Release](https://img.shields.io/github/v/release/eliaspc2/human-activity-extension?style=for-the-badge)](https://github.com/eliaspc2/human-activity-extension/releases/latest)
 
 ## Quick install
 
 - [Install on Chrome on Linux](#install-in-chrome-on-linux)
+- [Prepare Chrome on macOS](#install-in-chrome-on-macos)
+- [Prepare Chrome on Windows](#install-in-chrome-on-windows)
 - [Add to Firefox](#install-in-firefox-from-github)
 - [Latest release assets](https://github.com/eliaspc2/human-activity-extension/releases/latest)
 
@@ -60,6 +64,51 @@ If you prefer, clicking the `Install on Chrome` badge downloads the same install
 
 If you are testing the normal Chrome update cycle after the extension is already installed, do not rerun the Linux installer. Leave the existing install in place and let Chrome pick up the new version from `update_url`, or use the in-panel `↻` button to request a check.
 
+## Install in Chrome on macOS
+
+Chrome on macOS does not allow direct self-hosted one-click installs outside managed environments, but there is now a helper script that gets you to the final `Load unpacked` click as fast as possible:
+
+```bash
+curl -fsSL -o /tmp/human-activity-extension-macos-installer.sh \
+  https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-macos-installer.sh
+
+bash /tmp/human-activity-extension-macos-installer.sh
+```
+
+What it does:
+
+- downloads the latest `human-activity-extension-universal.zip`
+- extracts it to a stable local folder
+- opens `chrome://extensions`
+- reveals the extracted folder in Finder
+
+At the end, you only need to:
+
+1. enable `Developer mode`
+2. click `Load unpacked`
+3. choose the prepared folder
+
+## Install in Chrome on Windows
+
+Chrome on Windows has the same limitation outside managed environments, so the Windows helper script prepares everything up to the final `Load unpacked` step:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-windows-installer.ps1 | iex"
+```
+
+What it does:
+
+- downloads the latest `human-activity-extension-universal.zip`
+- extracts it to a stable local folder under `%LOCALAPPDATA%`
+- opens `chrome://extensions`
+- opens the prepared folder in Explorer
+
+At the end, you only need to:
+
+1. enable `Developer mode`
+2. click `Load unpacked`
+3. choose the prepared folder
+
 ## Install in Chrome from GitHub
 
 Direct public one-click install is still not available from GitHub alone in Chrome outside Linux/admin flows, so the manual GitHub path is:
@@ -73,6 +122,8 @@ Direct public one-click install is still not available from GitHub alone in Chro
 Useful links:
 
 - [Latest Linux installer](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-linux-installer.sh)
+- [Latest macOS helper](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-macos-installer.sh)
+- [Latest Windows helper](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-windows-installer.ps1)
 - [Latest release page](https://github.com/eliaspc2/human-activity-extension/releases/latest)
 - [Latest universal zip](https://github.com/eliaspc2/human-activity-extension/releases/latest/download/human-activity-extension-universal.zip)
 - [Repository source](https://github.com/eliaspc2/human-activity-extension)
@@ -175,6 +226,8 @@ Supported native backends in the helper:
 - `content.js` - floating UI and simulation logic injected into the current tab.
 - `updates.xml` - Chrome update manifest for self-hosted updates.
 - `install-chrome.sh` - Linux installer that bootstraps Chrome and restores the GitHub update channel.
+- `install-chrome-macos.sh` - macOS helper that downloads the latest package, opens Chrome extensions, and reveals the prepared folder.
+- `install-chrome-windows.ps1` - Windows helper that downloads the latest package, opens Chrome extensions, and reveals the prepared folder.
 - `build-crx.sh` - builds a signed `CRX` using the stable private key.
 - `build-firefox.sh` - creates Firefox-ready release packages from the same codebase.
 - `install-native-host.py` - installs the optional native host for anti-lock while running and computer lock on finish.

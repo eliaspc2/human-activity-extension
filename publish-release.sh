@@ -10,17 +10,26 @@ FIREFOX_XPI_PATH="$ROOT_DIR/dist/human-activity-extension-firefox.xpi"
 UNIVERSAL_ZIP_PATH="$ROOT_DIR/dist/human-activity-extension-universal.zip"
 LINUX_INSTALLER_PATH="$ROOT_DIR/install-chrome.sh"
 LINUX_INSTALLER_ASSET_PATH="$ROOT_DIR/dist/human-activity-extension-linux-installer.sh"
+MACOS_INSTALLER_PATH="$ROOT_DIR/install-chrome-macos.sh"
+MACOS_INSTALLER_ASSET_PATH="$ROOT_DIR/dist/human-activity-extension-macos-installer.sh"
+WINDOWS_INSTALLER_PATH="$ROOT_DIR/install-chrome-windows.ps1"
+WINDOWS_INSTALLER_ASSET_PATH="$ROOT_DIR/dist/human-activity-extension-windows-installer.ps1"
 
 "$ROOT_DIR/build-crx.sh"
 "$ROOT_DIR/build-firefox.sh"
 "$ROOT_DIR/package-extension.sh"
 cp "$LINUX_INSTALLER_PATH" "$LINUX_INSTALLER_ASSET_PATH"
 chmod +x "$LINUX_INSTALLER_ASSET_PATH"
+cp "$MACOS_INSTALLER_PATH" "$MACOS_INSTALLER_ASSET_PATH"
+chmod +x "$MACOS_INSTALLER_ASSET_PATH"
+cp "$WINDOWS_INSTALLER_PATH" "$WINDOWS_INSTALLER_ASSET_PATH"
 
 if gh release view "$TAG" >/dev/null 2>&1; then
   gh release upload "$TAG" \
     "$CRX_PATH#human-activity-extension.crx" \
     "$LINUX_INSTALLER_ASSET_PATH#human-activity-extension-linux-installer.sh" \
+    "$MACOS_INSTALLER_ASSET_PATH#human-activity-extension-macos-installer.sh" \
+    "$WINDOWS_INSTALLER_ASSET_PATH#human-activity-extension-windows-installer.ps1" \
     "$FIREFOX_ZIP_PATH#human-activity-extension-firefox.zip" \
     "$FIREFOX_XPI_PATH#human-activity-extension-firefox.xpi" \
     "$UNIVERSAL_ZIP_PATH#human-activity-extension-universal.zip" \
@@ -29,6 +38,8 @@ else
   gh release create "$TAG" \
     "$CRX_PATH#human-activity-extension.crx" \
     "$LINUX_INSTALLER_ASSET_PATH#human-activity-extension-linux-installer.sh" \
+    "$MACOS_INSTALLER_ASSET_PATH#human-activity-extension-macos-installer.sh" \
+    "$WINDOWS_INSTALLER_ASSET_PATH#human-activity-extension-windows-installer.ps1" \
     "$FIREFOX_ZIP_PATH#human-activity-extension-firefox.zip" \
     "$FIREFOX_XPI_PATH#human-activity-extension-firefox.xpi" \
     "$UNIVERSAL_ZIP_PATH#human-activity-extension-universal.zip" \
