@@ -171,13 +171,15 @@ Supported native backends in the helper:
 ## Project structure
 
 - `manifest.json` - shared MV3 manifest prepared for Chrome and Firefox.
-- `background.js` - toolbar click handler with Chrome and Firefox API fallbacks.
+- `background.js` - toolbar injection logic plus session persistence, update checks, and native anti-lock coordination.
 - `content.js` - floating UI and simulation logic injected into the current tab.
 - `updates.xml` - Chrome update manifest for self-hosted updates.
 - `install-chrome.sh` - Linux installer that bootstraps Chrome and restores the GitHub update channel.
 - `build-crx.sh` - builds a signed `CRX` using the stable private key.
 - `build-firefox.sh` - creates Firefox-ready release packages from the same codebase.
 - `install-native-host.py` - installs the optional native host for anti-lock while running and computer lock on finish.
+- `install-native-host.sh` - shell wrapper around the native-host installer.
+- `native/lock_host.py` - local native helper used for idle inhibition and finish-lock commands.
 - `publish-release.sh` - publishes the Chrome and Firefox release artifacts to the matching GitHub release.
 
 ## Packaging
