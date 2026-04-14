@@ -317,7 +317,7 @@
         position: fixed;
         top: 70px;
         right: 32px;
-        width: 274px;
+        width: 352px;
         box-sizing: border-box;
         padding: 14px 16px 16px;
         border-radius: 18px;
@@ -474,7 +474,7 @@
 
       #${PANEL_ID} .hae-duration-row {
         display: grid;
-        grid-template-columns: 1fr repeat(3, 50px);
+        grid-template-columns: 112px repeat(3, 62px);
         gap: 8px;
         align-items: center;
         margin-bottom: 14px;
@@ -484,12 +484,17 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        min-width: 0;
+        width: 112px;
+        min-width: 112px;
+        flex-wrap: nowrap;
       }
 
       #${PANEL_ID} #hae-minutes {
-        width: 100%;
-        min-width: 0;
+        width: 72px;
+        min-width: 72px;
+        max-width: 72px;
+        flex: 0 0 72px;
+        box-sizing: border-box;
         min-height: 38px;
         padding: 8px 10px;
         border-radius: 10px;
@@ -503,6 +508,7 @@
         font-weight: 700;
         line-height: 1.2;
         font-variant-numeric: tabular-nums;
+        letter-spacing: 0.02em;
         caret-color: #8bff74;
       }
 
@@ -519,6 +525,7 @@
         border: 1px solid rgba(255, 255, 255, 0.06);
         border-radius: 10px;
         padding: 8px 0;
+        min-width: 62px;
         background: rgba(255, 255, 255, 0.05);
         color: rgba(235, 232, 255, 0.92);
         font-size: 11px;
