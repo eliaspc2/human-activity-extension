@@ -8,6 +8,7 @@ import struct
 import subprocess
 import sys
 import time
+import re
 
 
 HOST_LABEL = "Human Activity Extension"
@@ -214,18 +215,149 @@ def windows_inhibit_worker():
 class IdleInhibitor:
     def __init__(self):
         self.process = None
-        self.backend = None
+        self.process_backend = None
+        self.dbus_backend = None
+        self.dbus_cookie = None
+
+    def current_backend(self):
+        parts = []
+        if self.process is not None and self.process.poll() is None and self.process_backend:
+            parts.append(self.process_backend)
+        if self.dbus_cookie is not None and self.dbus_backend:
+            parts.append(self.dbus_backend)
+        return "+".join(parts) if parts else None
+
+    def _linux_dbus_inhibit(self):
+        commands = [
+            (
+                [
+                    "qdbus",
+                    "org.freedesktop.ScreenSaver",
+                    "/ScreenSaver",
+                    "org.freedesktop.ScreenSaver.Inhibit",
+                    HOST_LABEL,
+                    IDLE_INHIBIT_REASON
+                ],
+                "qdbus"
+            ),
+            (
+                [
+                    "gdbus",
+                    "call",
+                    "--session",
+                    "--dest",
+                    "org.freedesktop.ScreenSaver",
+                    "--object-path",
+                    "/ScreenSaver",
+                    "--method",
+                    "org.freedesktop.ScreenSaver.Inhibit",
+                    HOST_LABEL,
+                    IDLE_INHIBIT_REASON
+                ],
+                "gdbus"
+            ),
+            (
+                [
+                    "dbus-send",
+                    "--session",
+                    "--print-reply",
+                    "--dest=org.freedesktop.ScreenSaver",
+                    "/ScreenSaver",
+                    "org.freedesktop.ScreenSaver.Inhibit",
+                    f"string:{HOST_LABEL}",
+                    f"string:{IDLE_INHIBIT_REASON}"
+                ],
+                "dbus-send"
+            )
+        ]
+
+        for command, backend in commands:
+            if shutil.which(command[0]) is None:
+                continue
+
+            try:
+                completed = subprocess.run(command, check=False, capture_output=True, text=True)
+            except OSError:
+                continue
+
+            if completed.returncode != 0:
+                continue
+
+            output = f"{completed.stdout}\n{completed.stderr}"
+            match = re.search(r"(\d+)", output)
+            if not match:
+                continue
+
+            self.dbus_cookie = int(match.group(1))
+            self.dbus_backend = backend
+            return True
+
+        return False
+
+    def _linux_dbus_uninhibit(self):
+        if self.dbus_cookie is None or self.dbus_backend is None:
+            return True
+
+        cookie = self.dbus_cookie
+        backend = self.dbus_backend
+        self.dbus_cookie = None
+        self.dbus_backend = None
+
+        commands = {
+            "qdbus": [
+                "qdbus",
+                "org.freedesktop.ScreenSaver",
+                "/ScreenSaver",
+                "org.freedesktop.ScreenSaver.UnInhibit",
+                str(cookie)
+            ],
+            "gdbus": [
+                "gdbus",
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.ScreenSaver",
+                "--object-path",
+                "/ScreenSaver",
+                "--method",
+                "org.freedesktop.ScreenSaver.UnInhibit",
+                str(cookie)
+            ],
+            "dbus-send": [
+                "dbus-send",
+                "--session",
+                "--dest=org.freedesktop.ScreenSaver",
+                "/ScreenSaver",
+                "org.freedesktop.ScreenSaver.UnInhibit",
+                f"uint32:{cookie}"
+            ]
+        }
+
+        command = commands.get(backend)
+        if not command or shutil.which(command[0]) is None:
+            return False
+
+        try:
+            completed = subprocess.run(command, check=False, capture_output=True, text=True)
+        except OSError:
+            return False
+
+        return completed.returncode == 0
 
     def supports_current_os(self):
         return platform.system() in {"Linux", "Darwin", "Windows"}
 
     def is_active(self):
-        if self.process is None:
-            return False
-        if self.process.poll() is not None:
+        process_active = self.process is not None and self.process.poll() is None
+        dbus_active = self.dbus_cookie is not None
+
+        if self.process is not None and self.process.poll() is not None:
             self.process = None
-            self.backend = None
+            self.process_backend = None
+
+        if not process_active and not dbus_active:
             return False
+
         return True
 
     def start(self):
@@ -233,12 +365,13 @@ class IdleInhibitor:
             return {
                 "ok": True,
                 "active": True,
-                "backend": self.backend,
+                "backend": self.current_backend(),
                 "already_active": True
             }
 
         system = platform.system()
         if system == "Linux":
+            dbus_started = self._linux_dbus_inhibit()
             candidates = [
                 (
                     [
@@ -289,11 +422,18 @@ class IdleInhibitor:
                 continue
 
             self.process = process
-            self.backend = backend
+            self.process_backend = backend
             return {
                 "ok": True,
                 "active": True,
-                "backend": backend
+                "backend": self.current_backend()
+            }
+
+        if system == "Linux" and dbus_started:
+            return {
+                "ok": True,
+                "active": True,
+                "backend": self.current_backend()
             }
 
         return {
@@ -310,12 +450,17 @@ class IdleInhibitor:
                 "already_stopped": True
             }
 
-        backend = self.backend
+        backend = self.current_backend()
         process = self.process
         self.process = None
-        self.backend = None
+        self.process_backend = None
 
-        if terminate_process(process):
+        process_ok = terminate_process(process)
+        dbus_ok = True
+        if platform.system() == "Linux":
+          dbus_ok = self._linux_dbus_uninhibit()
+
+        if process_ok and dbus_ok:
             return {
                 "ok": True,
                 "active": False,
@@ -333,7 +478,7 @@ class IdleInhibitor:
         return {
             "ok": True,
             "active": self.is_active(),
-            "backend": self.backend
+            "backend": self.current_backend()
         }
 
 
