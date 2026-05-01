@@ -217,8 +217,7 @@ Supported native backends in the helper:
 8. Optionally enable `Lock computer when finished`.
 9. Click `Start`.
 10. Click `Pause` to freeze the session and `Start` again to resume it.
-11. Click `Stop` to halt the session, or `x` to hide the panel and leave the draggable `HA` launcher on the page.
-12. Drag the `HA` square to move it, then click it to bring the panel back.
+11. Click `Stop` to halt the session or `x` to remove the panel from the page.
 
 ## Project structure
 

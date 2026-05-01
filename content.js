@@ -9,7 +9,6 @@
   const STYLE_ID = "human-activity-extension-style";
   const ROOT_ID = "human-activity-extension-root";
   const PANEL_ID = "human-activity-extension-panel";
-  const LAUNCHER_ID = "human-activity-extension-launcher";
   const CURSOR_ID = "human-activity-extension-cursor";
   const STATUS = {
     IDLE: "IDLE",
@@ -44,21 +43,15 @@
   let maxDelaySeconds = 30;
   let enabledActions = createDefaultActionState();
   let actionVariancePercent = 20;
-  let panelVisible = true;
   let isDragging = false;
   let dragOffsetX = 0;
   let dragOffsetY = 0;
-  let isLauncherDragging = false;
-  let launcherDragOffsetX = 0;
-  let launcherDragOffsetY = 0;
-  let launcherDragMoved = false;
   let cursorTimer = null;
   let loopTimer = null;
   let statsTimer = null;
   let wakeLock = null;
   let focusPulseTimer = null;
   let panelPosition = null;
-  let launcherPosition = null;
   let extensionVersion = extensionApi.runtime?.getManifest?.().version ?? "?";
   let manualUpdateSupported = false;
   let lockComputerSupported = false;
@@ -89,7 +82,7 @@
         <span class="hae-title-text">Human Activity</span>
         <span class="hae-version" id="hae-version">v?</span>
       </div>
-      <button class="hae-icon-button" id="hae-close" type="button" aria-label="Hide panel" title="Hide panel">×</button>
+      <button class="hae-icon-button" id="hae-close" type="button" aria-label="Close controller">×</button>
     </div>
     <div class="hae-progress">
       <div class="hae-progress-bar" id="hae-progress-bar"></div>
@@ -186,18 +179,7 @@
     </div>
   `;
 
-  const launcher = document.createElement("button");
-  launcher.id = LAUNCHER_ID;
-  launcher.dataset.humanActivityRoot = "true";
-  launcher.type = "button";
-  launcher.setAttribute("aria-label", "Open Human Activity panel");
-  launcher.setAttribute("aria-controls", PANEL_ID);
-  launcher.setAttribute("aria-expanded", "true");
-  launcher.title = "Focus Human Activity panel";
-  launcher.innerHTML = `<span class="hae-launcher-text">HA</span>`;
-
   root.appendChild(cursor);
-  root.appendChild(launcher);
   root.appendChild(panel);
   document.documentElement.appendChild(root);
 
@@ -249,10 +231,8 @@
   pauseButton.addEventListener("click", () => void pauseSession());
   stopButton.addEventListener("click", () => void stopSession(STATUS.STOPPED));
   checkUpdatesButton.addEventListener("click", () => void handleCheckUpdatesClick());
-  closeButton.addEventListener("click", () => void hidePanel());
+  closeButton.addEventListener("click", () => void destroy());
   dragbar.addEventListener("mousedown", handleDragStart);
-  launcher.addEventListener("mousedown", handleLauncherDragStart);
-  launcher.addEventListener("click", handleLauncherClick);
   document.addEventListener("mousemove", handleDragMove);
   document.addEventListener("mouseup", handleDragEnd);
   document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -287,10 +267,6 @@
 
     if (savedSession?.panelPosition) {
       applyPanelPosition(savedSession.panelPosition);
-    }
-
-    if (savedSession?.launcherPosition) {
-      applyLauncherPosition(savedSession.launcherPosition);
     }
 
     if (savedSession) {
@@ -337,56 +313,6 @@
         display: none;
       }
 
-      #${LAUNCHER_ID} {
-        position: fixed;
-        left: 24px;
-        bottom: 24px;
-        width: 56px;
-        height: 56px;
-        box-sizing: border-box;
-        padding: 0;
-        appearance: none;
-        border: 1px solid rgba(14, 31, 44, 0.18);
-        border-top: 4px solid #2c9a8f;
-        border-radius: 16px;
-        background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(235, 240, 244, 0.95));
-        color: #203242;
-        box-shadow:
-          0 12px 28px rgba(0, 0, 0, 0.18),
-          inset 0 1px 0 rgba(255, 255, 255, 0.82);
-        z-index: 2147483646;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 16px;
-        font-weight: 800;
-        line-height: 1;
-        letter-spacing: 0.08em;
-        font-family: "Segoe UI", "SF Pro Text", "Noto Sans", sans-serif;
-        cursor: grab;
-        user-select: none;
-        touch-action: none;
-      }
-
-      #${LAUNCHER_ID}:active {
-        cursor: grabbing;
-      }
-
-      #${LAUNCHER_ID}:hover {
-        box-shadow:
-          0 14px 32px rgba(0, 0, 0, 0.22),
-          inset 0 1px 0 rgba(255, 255, 255, 0.82);
-      }
-
-      #${LAUNCHER_ID}.hae-launcher-dragging {
-        transform: scale(1.03);
-      }
-
-      #${LAUNCHER_ID} .hae-launcher-text {
-        pointer-events: none;
-      }
-
       #${PANEL_ID} {
         position: fixed;
         top: 70px;
@@ -409,10 +335,6 @@
         z-index: 2147483647;
         user-select: none;
         backdrop-filter: blur(10px);
-      }
-
-      #${PANEL_ID}[hidden] {
-        display: none;
       }
 
       #${PANEL_ID}.hae-focus {
@@ -813,7 +735,6 @@
   function buildSessionSnapshot() {
     return {
       panelOpen,
-      panelVisible,
       statusMode,
       sessionTotalMs,
       accumulatedElapsedMs,
@@ -827,8 +748,7 @@
       enabledActions: { ...enabledActions },
       minutesValue: minutesInput.value,
       lockComputerWhenFinished,
-      panelPosition,
-      launcherPosition
+      panelPosition
     };
   }
 
@@ -836,7 +756,6 @@
     const now = Date.now();
 
     panelOpen = session.panelOpen !== false;
-    panelVisible = session.panelVisible !== false;
     minDelaySeconds = Number(session.minDelaySeconds ?? minDelaySeconds);
     maxDelaySeconds = Number(session.maxDelaySeconds ?? maxDelaySeconds);
     actionVariancePercent = Number(session.actionVariancePercent ?? actionVariancePercent);
@@ -851,7 +770,6 @@
     );
     lockComputerWhenFinished = Boolean(session.lockComputerWhenFinished);
     panelPosition = session.panelPosition ?? null;
-    launcherPosition = session.launcherPosition ?? null;
 
     if (session.minutesValue) {
       minutesInput.value = String(session.minutesValue);
@@ -930,7 +848,6 @@
     lockOnFinishCheckbox.checked = lockComputerWhenFinished;
     versionValue.textContent = `v${extensionVersion}`;
     updateNoteValue.textContent = updateStatusText;
-    syncPanelVisibility();
 
     startButton.disabled = statusMode === STATUS.RUNNING;
     pauseButton.disabled = statusMode !== STATUS.RUNNING;
@@ -1504,7 +1421,7 @@
   }
 
   function handleDragStart(event) {
-    if (event.button !== 0 || !panelVisible) {
+    if (event.button !== 0) {
       return;
     }
 
@@ -1514,76 +1431,27 @@
     dragOffsetY = event.clientY - panel.getBoundingClientRect().top;
   }
 
-  function handleLauncherDragStart(event) {
-    if (event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-    isLauncherDragging = true;
-    launcherDragMoved = false;
-    launcher.classList.add("hae-launcher-dragging");
-    launcherDragOffsetX = event.clientX - launcher.getBoundingClientRect().left;
-    launcherDragOffsetY = event.clientY - launcher.getBoundingClientRect().top;
-  }
-
   function handleDragMove(event) {
-    if (isDragging) {
-      panel.style.right = "auto";
-      panel.style.left = `${event.clientX - dragOffsetX}px`;
-      panel.style.top = `${event.clientY - dragOffsetY}px`;
+    if (!isDragging) {
       return;
     }
 
-    if (isLauncherDragging) {
-      const nextLeft = clampToViewport(event.clientX - launcherDragOffsetX, launcher.offsetWidth, window.innerWidth);
-      const nextTop = clampToViewport(event.clientY - launcherDragOffsetY, launcher.offsetHeight, window.innerHeight);
-
-      launcherDragMoved = true;
-      launcher.style.right = "auto";
-      launcher.style.bottom = "auto";
-      launcher.style.left = `${nextLeft}px`;
-      launcher.style.top = `${nextTop}px`;
-    }
+    panel.style.right = "auto";
+    panel.style.left = `${event.clientX - dragOffsetX}px`;
+    panel.style.top = `${event.clientY - dragOffsetY}px`;
   }
 
   async function handleDragEnd() {
-    let shouldPersist = false;
-
-    if (isDragging) {
-      isDragging = false;
-      panelPosition = {
-        left: panel.style.left || null,
-        top: panel.style.top || null
-      };
-      shouldPersist = true;
-    }
-
-    if (isLauncherDragging) {
-      isLauncherDragging = false;
-      launcher.classList.remove("hae-launcher-dragging");
-      launcherPosition = {
-        left: launcher.style.left || null,
-        top: launcher.style.top || null
-      };
-      shouldPersist = true;
-      window.setTimeout(() => {
-        launcherDragMoved = false;
-      }, 0);
-    }
-
-    if (shouldPersist) {
-      await persistSession();
-    }
-  }
-
-  function handleLauncherClick() {
-    if (launcherDragMoved) {
-      launcherDragMoved = false;
+    if (!isDragging) {
       return;
     }
 
-    focusPanel();
+    isDragging = false;
+    panelPosition = {
+      left: panel.style.left || null,
+      top: panel.style.top || null
+    };
+    await persistSession();
   }
 
   async function handleVisibilityChange() {
@@ -1602,52 +1470,7 @@
     panel.style.top = position.top;
   }
 
-  function applyLauncherPosition(position) {
-    if (!position?.left || !position?.top) {
-      return;
-    }
-
-    launcher.style.right = "auto";
-    launcher.style.bottom = "auto";
-    launcher.style.left = position.left;
-    launcher.style.top = position.top;
-  }
-
-  function clampToViewport(value, elementSize, viewportSize) {
-    return Math.min(Math.max(value, 0), Math.max(viewportSize - elementSize, 0));
-  }
-
-  function syncPanelVisibility() {
-    panel.hidden = !panelVisible;
-    panel.setAttribute("aria-hidden", String(!panelVisible));
-    launcher.setAttribute("aria-expanded", String(panelVisible));
-    launcher.setAttribute(
-      "aria-label",
-      panelVisible ? "Focus Human Activity panel" : "Open Human Activity panel"
-    );
-    launcher.title = panelVisible ? "Focus Human Activity panel" : "Open Human Activity panel";
-  }
-
-  function hidePanel() {
-    if (!panelVisible) {
-      return;
-    }
-
-    panelVisible = false;
-    panel.classList.remove("hae-focus");
-
-    if (focusPulseTimer) {
-      window.clearTimeout(focusPulseTimer);
-      focusPulseTimer = null;
-    }
-
-    syncPanelVisibility();
-    void persistSession();
-  }
-
   function focusPanel() {
-    panelVisible = true;
-    syncPanelVisibility();
     panel.classList.add("hae-focus");
     panel.scrollIntoView({ block: "nearest", inline: "nearest" });
 
@@ -1659,8 +1482,6 @@
       panel.classList.remove("hae-focus");
       focusPulseTimer = null;
     }, 1200);
-
-    void persistSession();
   }
 
   async function destroy() {
@@ -1670,8 +1491,6 @@
     document.removeEventListener("mouseup", handleDragEnd);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     dragbar.removeEventListener("mousedown", handleDragStart);
-    launcher.removeEventListener("mousedown", handleLauncherDragStart);
-    launcher.removeEventListener("click", handleLauncherClick);
     await clearSavedSession();
     root.remove();
     delete window.__humanActivityExtension;
