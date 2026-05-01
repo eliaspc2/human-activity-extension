@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Human Activity Extension",
-  "description": "Injects a floating controller into the active tab to simulate reading-like activity with scrolling, cursor movement, and neutral clicks.",
+  "description": "Injects a floating controller and draggable launcher square into the active tab to simulate reading-like activity with scrolling, cursor movement, and neutral clicks.",
   "version": "2.5.0",
   "minimum_chrome_version": "114",
   "update_url": "https://raw.githubusercontent.com/eliaspc2/human-activity-extension/main/updates.xml",
